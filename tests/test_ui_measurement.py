@@ -104,3 +104,70 @@ def test_falha_de_escrita_encerra_registro_sem_parar_demo(window, tmp_path, monk
     assert window.recorder is None
     assert window.demo_index == 120
     assert "Disco cheio" in window.console.toPlainText()
+
+
+def test_ui_sqlite_calibracao_relatorio_e_fasor(window, tmp_path, monkeypatch):
+    from prisma.core.calibration import Calibration
+    from prisma.core.history import list_sessions
+
+    window._set_calibration(Calibration({'va': {'gain': 2, 'offset': 0}}, 'ganho teste'))
+    assert window.last_analysis is None
+    path = tmp_path / 'sessoes.sqlite'
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a: (str(path), 'SQLite'))
+    window.toggle_recording(backend='sqlite')
+    for _ in range(6):
+        window._tick()
+    window.stop_recording()
+    assert list_sessions(path)[0][3] == 720
+    assert 'ganho teste' in list_sessions(path)[0][2]
+    assert 250 < window.last_analysis[0].rms['A'] < 260
+    assert float(window.power_view.item(0, 1).text()) == pytest.approx(5, abs=.01)
+    window._select_phasor('A')
+    window.phasor_reference.setCurrentIndex(1)
+    window._draw_signals()
+    assert '0.00°' in window.selected_phasor.text()
+    report = tmp_path / 'report.html'
+    monkeypatch.setattr(QFileDialog, 'getSaveFileName', lambda *a: (str(report), 'HTML'))
+    window.export_report()
+    assert 'ganho teste' in report.read_text(encoding='utf-8')
+    assert 'SINTÉTICOS' in report.read_text(encoding='utf-8')
+    window.reset_calibration()
+    assert window.metric_labels['A'].text() == '--- V'
+
+
+def test_ui_build_gravacao_requer_confirmacao_e_artefato_integro(window, tmp_path, monkeypatch):
+    import json
+    import sys
+    from PySide6.QtCore import QEventLoop, QTimer
+    from PySide6.QtWidgets import QMessageBox
+
+    project = tmp_path / 'project.json'
+    project.write_text(json.dumps({'version': 1, 'name': 'HOST TEST', 'target': 'HOST',
+        'build': [sys.executable, '-c', 'from pathlib import Path; Path("fw.elf").write_bytes(b"ELF"); Path("fw.map").write_text("MEMORY TEST")'],
+        'artifact': 'fw.elf', 'map_file': 'fw.map',
+        'flash': [sys.executable, '-c', 'from pathlib import Path; Path("executed").write_text("ok")']}))
+    monkeypatch.setattr(QFileDialog, 'getOpenFileName', lambda *a: (str(project), 'JSON'))
+    window.load_project()
+    loop = QEventLoop()
+    window.runner.done.connect(loop.quit)
+    window.build_project()
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+    assert window.build_digest is not None
+    assert window.btn_flash.isEnabled()
+    assert 'MEMORY TEST' in window.map_view.toPlainText()
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: QMessageBox.StandardButton.No)
+    window.flash_project()
+    assert not (tmp_path / 'executed').exists()
+    monkeypatch.setattr(QMessageBox, 'question', lambda *a: QMessageBox.StandardButton.Yes)
+    window.flash_project()
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+    assert (tmp_path / 'executed').read_text() == 'ok'
+    (tmp_path / 'executed').unlink()
+    (tmp_path / 'fw.elf').write_bytes(b'changed')
+    errors = []
+    monkeypatch.setattr(QMessageBox, 'critical', lambda *args: errors.append(args[-1]))
+    window.flash_project()
+    assert not (tmp_path / 'executed').exists()
+    assert any('Artefato alterado' in text for text in errors)

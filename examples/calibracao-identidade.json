@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "Identidade — substituir por coeficientes medidos",
+  "channels": {
+    "va": {"gain": 1.0, "offset": 0.0},
+    "vb": {"gain": 1.0, "offset": 0.0},
+    "vc": {"gain": 1.0, "offset": 0.0},
+    "ia": {"gain": 1.0, "offset": 0.0},
+    "ib": {"gain": 1.0, "offset": 0.0},
+    "ic": {"gain": 1.0, "offset": 0.0}
+  }
+}

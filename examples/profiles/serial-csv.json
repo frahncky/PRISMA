@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "name": "Firmware CSV trifásico compatível",
+  "protocol": "csv-trifasico-v1",
+  "baudrate": 115200
+}

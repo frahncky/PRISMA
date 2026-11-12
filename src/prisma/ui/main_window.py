@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import sqlite3
 import numpy as np
 import pyqtgraph as pg
 
@@ -11,12 +13,16 @@ from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTabWidget,
     QVBoxLayout, QWidget, QGridLayout,
+    QTableWidgetItem,
 )
 
+from prisma import __version__
 from prisma.core.measurement import SignalBuffer, analyze
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
+from prisma.core.history import SqliteRecorder
+from prisma.ui.features import FeaturesMixin
 
 COLORS = {"A": "#4ad6ea", "B": "#f2b84b", "C": "#e27eaf"}
 
@@ -58,30 +64,31 @@ QMenuBar, QMenu { background: #172638; }
 """
 
 
-class MainWindow(QMainWindow):
+class MainWindow(FeaturesMixin, QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("PRISMA Studio | Instrumentação e Sistemas Embarcados — v0.1")
+        self.setWindowTitle(f"PRISMA Studio | Instrumentação e Sistemas Embarcados — v{__version__}")
         self.resize(1480, 920)
         self.setMinimumSize(1060, 700)
         self.setStyleSheet(STYLE)
         pg.setConfigOptions(antialias=True, background="#132231", foreground="#b6cad9")
         self.buffer = SignalBuffer()
         self.reader: SerialReader | None = None
-        self.recorder: CsvRecorder | None = None
+        self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
         self.demo_index = 0
         self.mode = "DEMONSTRAÇÃO — SINAIS SINTÉTICOS"
         self._invalid_sample_logs = 0
         self._build_ui()
         self._build_menu()
+        self._build_features()
         self.refresh_ports()
         self.timer = QTimer(self)
         self.timer.setInterval(50)
         self.timer.timeout.connect(self._tick)
         self.timer.start()
-        self._log("PRISMA v0.1 iniciado em MODO DEMONSTRAÇÃO (sem dados de hardware).")
-        self._log("Gravação BDM e compilação ColdFire V1 ainda não integradas.")
+        self._log(f"PRISMA v{__version__} iniciado em MODO DEMONSTRAÇÃO (sem dados de hardware).")
+        self._log("Abra um projeto para configurar a toolchain. Integração DEMOEM ainda requer validação física.")
 
     def _build_menu(self) -> None:
         menu = self.menuBar().addMenu("Arquivo")
@@ -92,9 +99,9 @@ class MainWindow(QMainWindow):
         info = self.menuBar().addMenu("Ajuda")
         about = QAction("Sobre o PRISMA", self)
         about.triggered.connect(lambda: QMessageBox.information(
-            self, "PRISMA v0.1",
+            self, f"PRISMA v{__version__}",
             "Plataforma de Registro, Instrumentação, Sinais, Medição e Análise.\n"
-            "Os gráficos iniciais são SINTÉTICOS. BDM e firmware MCF51EM256 ainda pendentes."
+            "Os gráficos iniciais são SINTÉTICOS. A integração física DEMOEM ainda requer validação."
         ))
         info.addAction(about)
         acquisition = self.menuBar().addMenu("Aquisição")
@@ -104,26 +111,30 @@ class MainWindow(QMainWindow):
         self.record_label = QLabel("CSV: inativo")
         self.statusBar().addPermanentWidget(self.record_label)
 
-    def toggle_recording(self) -> None:
+    def toggle_recording(self, checked=False, *, backend: str = "csv") -> None:
         if self.recorder is not None:
             self.stop_recording()
             return
         if not self.mode.startswith(("DEMONSTRAÇÃO", "AQUISIÇÃO SERIAL REAL")):
             QMessageBox.information(self, "Registro CSV", "Ative o modo demo ou aguarde amostras da serial.")
             return
-        filename, _ = QFileDialog.getSaveFileName(
-            self, "Registrar amostras CSV", "aquisicao.csv", "CSV (*.csv)"
-        )
+        sqlite = backend == "sqlite"
+        filename, _ = QFileDialog.getSaveFileName(self, "Registrar amostras",
+            "historico.sqlite" if sqlite else "aquisicao.csv",
+            "SQLite (*.sqlite *.db)" if sqlite else "CSV (*.csv)")
         if not filename:
             return
         try:
-            self.recorder = CsvRecorder(Path(filename), self.mode)
-        except OSError as exc:
+            metadata = json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False)
+            source = f"{self.mode} | calibração: {metadata}"
+            self.recorder = SqliteRecorder(Path(filename), source, metadata) if sqlite else CsvRecorder(Path(filename), source)
+        except (OSError, sqlite3.Error) as exc:
             QMessageBox.critical(self, "Erro ao iniciar registro", str(exc))
             return
-        self.record_action.setText("Parar registro CSV")
-        self.record_label.setText("CSV: gravando · 0 amostras")
-        self._log(f"Registro CSV iniciado: {filename} | {self.mode}")
+        self.record_action.setText("Parar registro")
+        self.sqlite_action.setText("Parar registro")
+        self.record_label.setText(f"{'SQLite' if sqlite else 'CSV'}: gravando · 0 amostras")
+        self._log(f"Registro iniciado: {filename} | {self.mode}")
 
     def stop_recording(self) -> None:
         recorder = self.recorder
@@ -132,9 +143,10 @@ class MainWindow(QMainWindow):
             return
         try:
             recorder.close()
-        except OSError as exc:
+        except (OSError, sqlite3.Error) as exc:
             self._log(f"Erro ao finalizar CSV: {exc}")
         self.record_action.setText("Iniciar registro CSV…")
+        self.sqlite_action.setText("Iniciar histórico SQLite…")
         self.record_label.setText("CSV: inativo")
         self._log(f"Registro CSV encerrado: {recorder.count} amostras | {recorder.path}")
 
@@ -142,7 +154,7 @@ class MainWindow(QMainWindow):
         if self.recorder is not None:
             try:
                 self.recorder.write(sample)
-            except OSError as exc:
+            except (OSError, sqlite3.Error) as exc:
                 self._log(f"Erro de escrita CSV: {exc}")
                 self.stop_recording()
 
@@ -181,8 +193,8 @@ class MainWindow(QMainWindow):
         toolbar = QHBoxLayout()
         self.btn_open = QPushButton("Abrir C")
         self.btn_save = QPushButton("Salvar C")
-        self.btn_compile = QPushButton("Compilar (pendente)")
-        self.btn_flash = QPushButton("Gravar BDM (pendente)")
+        self.btn_compile = QPushButton("Compilar")
+        self.btn_flash = QPushButton("Gravar BDM")
         for b in (self.btn_compile, self.btn_flash):
             b.setEnabled(False)
             b.setToolTip("Requer integração e validação da toolchain ColdFire V1/BDM.")
@@ -212,6 +224,8 @@ class MainWindow(QMainWindow):
         sidebar.setMaximumWidth(320)
         side.addWidget(QLabel("HARDWARE-ALVO"))
         board = QLabel("DEMOEM\nMCF51EM256")
+        self.board_label = board
+        board.setWordWrap(True)
         board.setAlignment(Qt.AlignmentFlag.AlignCenter)
         board.setStyleSheet(
             "font-size: 23px; font-weight: 700; color: #4ad6ea;"
@@ -267,7 +281,8 @@ class MainWindow(QMainWindow):
         caption = QLabel("FREQUÊNCIA DE REFERÊNCIA")
         caption.setObjectName("muted")
         info_layout.addWidget(caption)
-        info_layout.addWidget(QLabel("60 Hz (fixa)"))
+        self.frequency_label = QLabel("60 Hz (referência)")
+        info_layout.addWidget(self.frequency_label)
         metrics.addWidget(info_card)
         dash_layout.addLayout(metrics)
 
@@ -330,7 +345,7 @@ class MainWindow(QMainWindow):
         console_lay.addWidget(self.console)
         main.addWidget(console_wrap)
         self.statusBar().showMessage(
-            "PRISMA v0.1 | Sinais simulados — nenhuma aquisição física ativa"
+            f"PRISMA v{__version__} | Sinais simulados — nenhuma aquisição física ativa"
         )
 
     def _log(self, message: str) -> None:
@@ -363,7 +378,11 @@ class MainWindow(QMainWindow):
         if self.reader is not None and self.reader.isRunning():
             self.stop_recording()
             self.reader.stop()
-            self.reader.wait(1200)
+            if not self.reader.wait(1200):
+                self._log("A serial ainda está encerrando.")
+                return
+            self.reader = None
+            self._on_disconnected()
             self._set_mode("DESCONECTADO — SEM AQUISIÇÃO")
             self.b_connect.setText("Conectar serial")
             return
@@ -376,13 +395,17 @@ class MainWindow(QMainWindow):
             return
         self.stop_recording()
         self.buffer.clear()
+        self._invalidate_analysis()
+        self.hardware_view.setPlainText("Aguardando telemetria de estados do firmware.")
         self._invalid_sample_logs = 0
         self._set_mode(f"CONECTANDO A {port} — SEM DADOS")
-        self.reader = SerialReader(port, parent=self)
-        self.reader.connected.connect(lambda: self._on_connected(port))
-        self.reader.sample_received.connect(self._on_sample)
+        self.reader = SerialReader(port, self.device_profile.baudrate, parent=self, parser=self.sample_parser)
+        reader = self.reader
+        self.reader.connected.connect(lambda: self._on_connected(port) if self.reader is reader else None)
+        self.reader.sample_received.connect(lambda sample: self._on_sample(sample) if self.reader is reader else None)
+        self.reader.status_received.connect(lambda status: self._on_hardware_status(status) if self.reader is reader else None)
         self.reader.message.connect(self._log)
-        self.reader.disconnected.connect(self._on_disconnected)
+        self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
         self.reader.start()
         self.b_connect.setText("Desconectar")
 
@@ -392,6 +415,7 @@ class MainWindow(QMainWindow):
 
     def _on_sample(self, sample: Sample) -> None:
         try:
+            sample = self.calibration.apply(sample)
             self.buffer.add(sample)
         except ValueError as exc:
             if self._invalid_sample_logs < 5:
@@ -414,8 +438,13 @@ class MainWindow(QMainWindow):
         self.stop_recording()
         if self.reader is not None and self.reader.isRunning():
             self.reader.stop()
-            self.reader.wait(1200)
+            if not self.reader.wait(1200):
+                self._log("Aguardando encerramento da serial antes de trocar a origem.")
+                return
+        self.reader = None
         self.buffer.clear()
+        self._invalidate_analysis()
+        self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         self.demo_index = 0
         self.hw_status.setText("BDM: NÃO CONECTADO\nSERIAL: NÃO CONECTADO")
         self.b_connect.setText("Conectar serial")
@@ -429,8 +458,9 @@ class MainWindow(QMainWindow):
         if self.recorder is not None:
             try:
                 self.recorder.flush()
-                self.record_label.setText(f"CSV: gravando · {self.recorder.count} amostras")
-            except OSError as exc:
+                kind = "SQLite" if isinstance(self.recorder, SqliteRecorder) else "CSV"
+                self.record_label.setText(f"{kind}: gravando · {self.recorder.count} amostras")
+            except (OSError, sqlite3.Error) as exc:
                 self._log(f"Erro de escrita CSV: {exc}")
                 self.stop_recording()
 
@@ -446,14 +476,22 @@ class MainWindow(QMainWindow):
             )
             vb = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[1])
             vc = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[2])
-            sample = Sample(float(tt), float(va), float(vb), float(vc))
-            self.buffer.add(sample)
+            currents = [float(np.sqrt(2) * 5 * np.sin(2 * np.pi * 60 * tt + phase - np.arccos(0.9))) for phase in phases]
+            try:
+                sample = self.calibration.apply(Sample(float(tt), float(va), float(vb), float(vc), *currents))
+                self.buffer.add(sample)
+            except ValueError as exc:
+                if self._invalid_sample_logs < 5:
+                    self._log(f"Amostra demo ignorada: {exc}")
+                    self._invalid_sample_logs += 1
+                continue
             self._record_sample(sample)
         self.demo_index += 120
 
     def _draw_signals(self) -> None:
         t, values = self.buffer.arrays(duration_s=0.25)
         if t.size < 12:
+            self.last_analysis = None
             return
         x = t - t[-1]
         for i, phase in enumerate(("A", "B", "C")):
@@ -462,14 +500,21 @@ class MainWindow(QMainWindow):
         if (t[-1] - t[0]) < 0.12:
             return
         try:
-            result = analyze(t, values, fundamental_hz=60)
+            frequency = (60.0, 50.0, None)[self.frequency_combo.currentIndex()]
+            window = ("rectangular", "hann")[self.window_combo.currentIndex()]
+            result = analyze(t, values, fundamental_hz=frequency, currents=self.buffer.currents(), window=window)
         except ValueError as exc:
+            self.last_analysis = None
+            self.frequency_label.setText("Indisponível")
+            self.power_view.clearContents()
             for label in self.metric_labels.values():
                 label.setText("--- V")
             self.phasor.clear()
             self.harmonics.clear()
             self.details.setText(f"Análise indisponível: {exc}")
             return
+        self.frequency_label.setText(f"{result.frequency_hz:.3f} Hz")
+        self.phasor.setTitle(f"DIAGRAMA FASORIAL · {result.frequency_hz:.3f} Hz")
         for phase in ("A", "B", "C"):
             self.metric_labels[phase].setText(f"{result.rms[phase]:.2f} V")
         self.phasor.clear()
@@ -479,46 +524,69 @@ class MainWindow(QMainWindow):
         self.phasor.addItem(pg.InfiniteLine(
             pos=0, angle=90, pen=pg.mkPen("#506579", width=1)
         ))
+        reference = self.phasor_reference.currentIndex()
+        rotation = np.exp(-1j * np.angle(result.phasors[("A", "B", "C")[reference - 1]])) if reference else 1
         for phase in ("A", "B", "C"):
-            ph = result.phasors[phase]
-            self.phasor.plot(
+            ph = result.phasors[phase] * rotation
+            item = self.phasor.plot(
                 [0, ph.real], [0, ph.imag],
-                pen=pg.mkPen(COLORS[phase], width=3),
+                pen=pg.mkPen(COLORS[phase], width=5 if self.selected_phase == phase else 3),
                 symbol="o", symbolSize=7, symbolBrush=COLORS[phase]
             )
+            item.sigPointsClicked.connect(lambda item, points, event, p=phase: self._select_phasor(p))
+            if self.selected_phase == phase:
+                self.selected_phasor.setText(f"Fase {phase}: {abs(ph):.3f} V ∠ {np.degrees(np.angle(ph)):.2f}°")
             tag = pg.TextItem(phase, color=COLORS[phase], anchor=(0.5, 0.5))
             tag.setPos(ph.real * 1.13, ph.imag * 1.13)
             self.phasor.addItem(tag)
         self.harmonics.clear()
         heights = np.array(result.harmonic_percent[1:])
         last_harmonic = len(result.harmonic_percent)
-        if heights.size:
+        if heights.size and result.thd_percent is not None:
             self.harmonics.addItem(pg.BarGraphItem(
                 x=np.arange(2, last_harmonic + 1), height=heights,
                 width=0.65, brush="#24bace"
             ))
             self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
             self.harmonics.setTitle(f"HARMÔNICAS · FASE A · h2 a h{last_harmonic}")
-            thd = np.sqrt(np.sum(heights**2))
+            thd = result.thd_percent
             thd_text = f"THD estimada Va (h2–h{last_harmonic}): {thd:.2f} %"
         else:
             self.harmonics.setTitle("HARMÔNICAS · TAXA DE AMOSTRAGEM INSUFICIENTE")
             self.harmonics.setYRange(0, 5, padding=0)
-            thd_text = "THD indisponível: taxa insuficiente para h2."
+            thd_text = "THD indisponível: taxa insuficiente para h2 ou fundamental ausente."
         angles = {p: np.degrees(np.angle(result.phasors[p])) for p in ("A", "B", "C")}
         source = (
             "DADOS SINTÉTICOS\nNão representam a DEMOEM física."
             if self.mode.startswith("DEMONSTRAÇÃO")
             else "DADOS DA PORTA SERIAL\nEscala e sincronismo dependem do firmware."
         )
+        power_text = "Potências indisponíveis: sem correntes sincronizadas."
+        self.power_view.clearContents()
+        if result.power:
+            power_text = (f"ΣP {sum(p.active_w for p in result.power.values()):.1f} W · "
+                f"ΣQ1 {sum(p.reactive_fundamental_var for p in result.power.values()):.1f} var\n"
+                "Correntes, S e FP por fase: aba Análise.")
+            for row, (phase, power) in enumerate(result.power.items()):
+                cells = [phase, f"{result.current_rms[phase]:.3f}", f"{power.active_w:.3f}",
+                    f"{power.reactive_fundamental_var:.3f}", f"{power.apparent_va:.3f}",
+                    f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
+                for column, value in enumerate(cells):
+                    self.power_view.setItem(row, column, QTableWidgetItem(value))
+        self.last_analysis = (result, self.mode,
+            json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
+            float(t[0]), float(t[-1]))
         self.details.setText(
-            f"{source}\n\n"
+            f"{source}\n"
             f"{thd_text}\n\n"
             f"Fasor A: {abs(result.phasors['A']):.1f} V ∠ {angles['A']:.1f}°\n"
             f"Fasor B: {abs(result.phasors['B']):.1f} V ∠ {angles['B']:.1f}°\n"
-            f"Fasor C: {abs(result.phasors['C']):.1f} V ∠ {angles['C']:.1f}°\n\n"
-            "Estimativas não calibradas nem certificadas."
+            f"Fasor C: {abs(result.phasors['C']):.1f} V ∠ {angles['C']:.1f}°\n"
+            f"{power_text}\nEstimativas sem certificação metrológica."
         )
+
+    def _select_phasor(self, phase: str) -> None:
+        self.selected_phase = phase
 
     def open_code(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(
@@ -529,6 +597,7 @@ class MainWindow(QMainWindow):
         try:
             self.editor.setPlainText(Path(filename).read_text(encoding="utf-8"))
             self.current_file = Path(filename)
+            self.editor.document().setModified(False)
             self.tabs.setCurrentWidget(self.editor)
             self._log(f"Código aberto: {filename}")
         except OSError as exc:
@@ -544,13 +613,18 @@ class MainWindow(QMainWindow):
         try:
             Path(filename).write_text(self.editor.toPlainText(), encoding="utf-8")
             self.current_file = Path(filename)
+            self.editor.document().setModified(False)
             self._log(f"Código salvo: {filename}")
         except OSError as exc:
             QMessageBox.critical(self, "Erro ao salvar", str(exc))
 
     def closeEvent(self, event) -> None:
+        self.runner.close()
+        self.debugger.close()
         self.stop_recording()
         if self.reader is not None and self.reader.isRunning():
             self.reader.stop()
-            self.reader.wait(1500)
+            if not self.reader.wait(1500):
+                event.ignore()
+                return
         super().closeEvent(event)

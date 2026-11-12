@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "name": "Dispositivo com firmware PRISMA JSON v1",
+  "protocol": "prisma-json-v1",
+  "baudrate": 115200
+}

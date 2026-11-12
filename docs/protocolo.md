@@ -14,4 +14,28 @@ O firmware é responsável por converter ADC para unidade física. Este protocol
 
 JSON facilita prototipação, mas pode sobrecarregar o ColdFire em taxas maiores. Prever posteriormente protocolo binário com checksum/CRC, timestamp de hardware, detecção de perdas e mecanismos de controle seguros.
 
-O cálculo atual assume fundamental fixa em 60 Hz. Análises precisas exigem calibração, frequência aferida e amostragem suficientemente rápida, estável e sincronizada.
+Análises precisas exigem calibração, frequência aferida e amostragem suficientemente rápida, estável e sincronizada.
+
+## Extensões compatíveis: correntes e estados
+
+Uma amostra pode incluir `ia`, `ib`, `ic`, em ampères, sincronizadas com as tensões. Os três campos devem estar presentes juntos, como números finitos. Ausência não significa corrente zero e mantém as potências indisponíveis.
+
+```json
+{"type":"sample","t":0.001,"va":110.2,"vb":-92.1,"vc":-18.3,"ia":4.1,"ib":-3.2,"ic":-0.9}
+```
+
+Os estados físicos são mensagens separadas e opcionais:
+
+```json
+{"type":"status","leds":{"run":true},"gpio":{"input":false},"adc":{"adc0_raw":2048},"lcd":["PRISMA","Aquisicao ativa"]}
+```
+
+`leds` e `gpio` contêm valores booleanos, `adc` contém números finitos nas unidades identificadas pelo firmware, e `lcd` contém até quatro linhas de 80 caracteres. Cada grupo digital/ADC aceita até 64 nomes de 40 caracteres. A tela apresenta esses dados como informados pelo firmware; não infere estados físicos a partir das tensões.
+
+O leitor aceita linhas fragmentadas entre leituras e limita cada linha a 16384 bytes, descartando mensagens maiores até a próxima quebra de linha. São exibidos no máximo cinco avisos de linhas inválidas por conexão. Uma linha incompleta é descartada ao encerrar a conexão.
+
+## Taxa de amostragem e transporte
+
+A análise aceita referência de 50 Hz, 60 Hz ou estimação automática entre 40 e 70 Hz, selecionada na aba Análise. As harmônicas ficam estritamente abaixo de Nyquist; THD e potências seguem os métodos em [instrumentação](instrumentacao.md).
+
+Dimensionar a capacidade da serial antes de definir a taxa do ADC: em 8N1, a vazão útil máxima aproximada é `baudrate / 10` bytes/s, sem folga. O JSON trifásico, principalmente com correntes, pode exceder 115200 baud em taxas baixas. Para aquisição de alta ordem harmônica, prever transporte mais eficiente e validar perdas/sincronismo; o gerador demo não atravessa a serial. Ver [orçamento da bancada](bancada-demoem.md).

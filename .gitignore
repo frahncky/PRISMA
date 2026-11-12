@@ -19,3 +19,9 @@ Thumbs.db
 *.csv
 .env
 prisma.local.json
+work/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+prisma-host.exe

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "Simulador de firmware em computador (GCC)",
+  "target": "HOST — não gravar em microcontrolador",
+  "directory": "../..",
+  "build": [
+    "gcc",
+    "-std=c99",
+    "-Wall",
+    "-Wextra",
+    "-Werror",
+    "-g",
+    "-Ifirmware/include",
+    "firmware/src/main.c",
+    "firmware/src/prisma_telemetry.c",
+    "firmware/ports/host_simulator.c",
+    "-lm",
+    "-Wl,-Map=prisma-host.map",
+    "-o",
+    "prisma-host.exe"
+  ],
+  "artifact": "prisma-host.exe",
+  "map_file": "prisma-host.map",
+  "flash": [],
+  "debugger": [],
+  "remote": "localhost:7224"
+}

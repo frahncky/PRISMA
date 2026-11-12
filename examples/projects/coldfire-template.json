@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "DEMOEM — template a configurar no computador da bancada",
+  "target": "MCF51EM256 / ColdFire V1 — confirmar revisão da placa",
+  "directory": ".",
+  "build": ["CONFIGURAR_EXECUTAVEL_BUILD_CODEWARRIOR", "CONFIGURAR_ARGUMENTOS_DO_PROJETO"],
+  "artifact": "CONFIGURAR_CAMINHO_DO_FIRMWARE.elf",
+  "map_file": "CONFIGURAR_CAMINHO_DO_MAPA.map",
+  "flash": [],
+  "debugger": [],
+  "remote": "localhost:7224"
+}
