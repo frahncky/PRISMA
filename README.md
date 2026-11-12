@@ -12,6 +12,7 @@ O PRISMA é um software desktop para Windows voltado ao desenvolvimento de siste
 
 - Interface desktop escura em português, com editor de código C;
 - Gráficos trifásicos, fasores e espectro harmônico;
+- Espectro limitado às ordens abaixo de Nyquist, conforme a taxa de amostragem;
 - Modo demonstração com dados sintéticos de 60 Hz;
 - Monitoramento serial (115200 baud, protocolo JSON por linha);
 - Testes automatizados para processamento e protocolo;
@@ -28,6 +29,11 @@ py -m venv .venv
 ```
 
 O programa inicia no **modo demonstração**, sem necessidade da DEMOEM.
+
+A demonstração gera 2400 amostras/s e inclui uma terceira harmônica de 2,5%
+na fase A. Na aquisição serial, a maior distância temporal entre amostras limita
+as ordens exibidas. A THD informa o intervalo de harmônicas analisado; quando
+nem a segunda harmônica pode ser medida, aparece como indisponível.
 
 ## Comunicação real
 

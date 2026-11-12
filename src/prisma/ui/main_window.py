@@ -373,9 +373,9 @@ class MainWindow(QMainWindow):
         self._draw_signals()
 
     def _generate_demo_batch(self) -> None:
-        # 800 amostras/s, 40 amostras a cada 50 ms.
-        indices = np.arange(self.demo_index, self.demo_index + 40, dtype=float)
-        t = indices / 800.0
+        # 2400 amostras/s: Nyquist de 1200 Hz permite analisar até h15 (900 Hz).
+        indices = np.arange(self.demo_index, self.demo_index + 120, dtype=float)
+        t = indices / 2400.0
         phases = (0.0, -2 * np.pi / 3, 2 * np.pi / 3)
         for tt in t:
             va = np.sqrt(2) * 127 * (
@@ -385,7 +385,7 @@ class MainWindow(QMainWindow):
             vb = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[1])
             vc = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[2])
             self.buffer.add(Sample(float(tt), float(va), float(vb), float(vc)))
-        self.demo_index += 40
+        self.demo_index += 120
 
     def _draw_signals(self) -> None:
         t, values = self.buffer.arrays(duration_s=0.25)
@@ -395,11 +395,16 @@ class MainWindow(QMainWindow):
         for i, phase in enumerate(("A", "B", "C")):
             self.curves[phase].setData(x, values[:, i])
         self.wave.setXRange(-0.25, 0.0, padding=0)
-        if len(t) < 100 or (t[-1] - t[0]) < 0.12:
+        if (t[-1] - t[0]) < 0.12:
             return
         try:
             result = analyze(t, values, fundamental_hz=60)
-        except ValueError:
+        except ValueError as exc:
+            for label in self.metric_labels.values():
+                label.setText("--- V")
+            self.phasor.clear()
+            self.harmonics.clear()
+            self.details.setText(f"Análise indisponível: {exc}")
             return
         for phase in ("A", "B", "C"):
             self.metric_labels[phase].setText(f"{result.rms[phase]:.2f} V")
@@ -422,11 +427,20 @@ class MainWindow(QMainWindow):
             self.phasor.addItem(tag)
         self.harmonics.clear()
         heights = np.array(result.harmonic_percent[1:])
-        self.harmonics.addItem(pg.BarGraphItem(
-            x=np.arange(2, 16), height=heights, width=0.65, brush="#24bace"
-        ))
-        self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
-        thd = np.sqrt(np.sum(heights**2))
+        last_harmonic = len(result.harmonic_percent)
+        if heights.size:
+            self.harmonics.addItem(pg.BarGraphItem(
+                x=np.arange(2, last_harmonic + 1), height=heights,
+                width=0.65, brush="#24bace"
+            ))
+            self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
+            self.harmonics.setTitle(f"HARMÔNICAS · FASE A · h2 a h{last_harmonic}")
+            thd = np.sqrt(np.sum(heights**2))
+            thd_text = f"THD estimada Va (h2–h{last_harmonic}): {thd:.2f} %"
+        else:
+            self.harmonics.setTitle("HARMÔNICAS · TAXA DE AMOSTRAGEM INSUFICIENTE")
+            self.harmonics.setYRange(0, 5, padding=0)
+            thd_text = "THD indisponível: taxa insuficiente para h2."
         angles = {p: np.degrees(np.angle(result.phasors[p])) for p in ("A", "B", "C")}
         source = (
             "DADOS SINTÉTICOS\nNão representam a DEMOEM física."
@@ -435,7 +449,7 @@ class MainWindow(QMainWindow):
         )
         self.details.setText(
             f"{source}\n\n"
-            f"THD estimada Va (h2–h15): {thd:.2f} %\n\n"
+            f"{thd_text}\n\n"
             f"Fasor A: {abs(result.phasors['A']):.1f} V ∠ {angles['A']:.1f}°\n"
             f"Fasor B: {abs(result.phasors['B']):.1f} V ∠ {angles['B']:.1f}°\n"
             f"Fasor C: {abs(result.phasors['C']):.1f} V ∠ {angles['C']:.1f}°\n\n"

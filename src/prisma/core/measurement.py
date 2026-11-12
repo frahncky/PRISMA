@@ -35,19 +35,31 @@ class SignalBuffer:
 
 def analyze(t: np.ndarray, values: np.ndarray, fundamental_hz: float = 60.0,
             max_harmonic: int = 15) -> Measurement:
-    """Estimativas digitais; não são medições metrológicas certificadas."""
-    if t.size < 12 or values.shape != (len(t), 3):
+    """Estimativas digitais, limitadas às harmônicas abaixo de Nyquist.
+
+    O maior intervalo entre amostras define um limite conservador para
+    aquisições com pequenos desvios de temporização.
+    """
+    if t.ndim != 1 or t.size < 12 or values.shape != (len(t), 3):
         raise ValueError("A análise requer no mínimo 12 amostras trifásicas")
-    if fundamental_hz <= 0 or max_harmonic <= 0:
+    if not np.isfinite(fundamental_hz) or fundamental_hz <= 0 or max_harmonic <= 0:
         raise ValueError("Frequência e número de harmônicas devem ser positivos")
-    if np.any(np.diff(t) <= 0):
+    if not np.all(np.isfinite(t)) or not np.all(np.isfinite(values)):
+        raise ValueError("Amostras devem conter apenas valores finitos")
+    intervals = np.diff(t)
+    if np.any(intervals <= 0):
         raise ValueError("Amostras fora da ordem temporal")
+    nyquist_hz = 0.5 / float(intervals.max())
+    if fundamental_hz >= nyquist_hz:
+        raise ValueError("Taxa de amostragem insuficiente para a frequência fundamental")
     centered = values - values.mean(axis=0)
     rms = np.sqrt(np.mean(centered**2, axis=0))
     kernel = np.exp(-2j * np.pi * fundamental_hz * t)
     phasor_vals = (2.0 / len(t)) * (kernel @ centered) / np.sqrt(2)
     amps = []
     for harmonic in range(1, max_harmonic + 1):
+        if harmonic * fundamental_hz >= nyquist_hz:
+            break
         k = np.exp(-2j * np.pi * fundamental_hz * harmonic * t)
         amps.append(float(np.abs(2.0 / len(t) * (k @ centered[:, 0]))))
     base = max(amps[0], 1e-12)

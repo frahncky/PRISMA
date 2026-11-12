@@ -23,3 +23,53 @@ def test_buffer_descarta_timestamps_repetidos():
     b.add(Sample(0.0, 0.0, 0.0, 0.0))
     with pytest.raises(ValueError):
         b.add(Sample(0.0, 1.0, 1.0, 1.0))
+
+
+def three_phase_signal(t):
+    return np.column_stack([
+        np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * t + phase)
+        for phase in (0, -2 * np.pi / 3, 2 * np.pi / 3)
+    ])
+
+
+def test_harmonicas_limitadas_por_nyquist():
+    t = np.arange(400) / 800
+    result = analyze(t, three_phase_signal(t))
+    # h7 = 420 Hz não pode ser medida a 800 amostras/s.
+    assert len(result.harmonic_percent) == 6
+    assert max(result.harmonic_percent[1:]) < 0.01
+
+
+def test_demo_mede_terceira_harmonica_sem_alias():
+    t = np.arange(600) / 2400
+    values = three_phase_signal(t)
+    values[:, 0] += np.sqrt(2) * 127 * 0.025 * np.sin(2 * np.pi * 180 * t)
+    result = analyze(t, values)
+    assert len(result.harmonic_percent) == 15
+    assert result.harmonic_percent[2] == pytest.approx(2.5, abs=0.01)
+    assert max(result.harmonic_percent[3:]) < 0.01
+
+
+def test_taxa_permite_apenas_fundamental():
+    t = np.arange(100) / 200
+    result = analyze(t, three_phase_signal(t))
+    assert result.harmonic_percent == pytest.approx([100])
+
+
+def test_rejeita_fundamental_no_limite_de_nyquist():
+    t = np.arange(60) / 120
+    with pytest.raises(ValueError, match="Taxa de amostragem insuficiente"):
+        analyze(t, three_phase_signal(t))
+
+
+@pytest.mark.parametrize("invalid", [np.nan, np.inf, -np.inf])
+def test_rejeita_amostras_nao_finitas(invalid):
+    t = np.arange(120) / 2400
+    values = three_phase_signal(t)
+    values[3, 0] = invalid
+    with pytest.raises(ValueError, match="valores finitos"):
+        analyze(t, values)
+    values = three_phase_signal(t)
+    t[3] = invalid
+    with pytest.raises(ValueError, match="valores finitos"):
+        analyze(t, values)
