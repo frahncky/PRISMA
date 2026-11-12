@@ -44,6 +44,7 @@ A proposta é aproximar programação embarcada e análise de sinais em um mesmo
 | 🧪 **Demonstração** | Sinais trifásicos sintéticos de 60 Hz, com terceira harmônica de 2,5% na fase A. |
 | 📡 **Aquisição serial** | Seleção de porta COM, leitura de JSON por linha a 115200 baud e console de comunicação. |
 | 📝 **Editor C** | Abertura e salvamento de arquivos `.c` e `.h`, com esqueleto ilustrativo para o hardware-alvo. |
+| 💾 **Registro CSV** | Gravação incremental das amostras aceitas, com tempo, tensões e identificação da origem real ou sintética. |
 
 ## 🚀 Como executar
 
@@ -66,6 +67,14 @@ O aplicativo abre em **modo demonstração**, sem necessidade da DEMOEM. A aba *
 O gerador produz **2400 amostras/s**, suficientes para analisar até a 15ª harmônica de 60 Hz. As fases têm valor nominal de 127 V RMS, e a fase A inclui uma terceira harmônica de 2,5%.
 
 Na aquisição serial, o maior intervalo entre amostras define o limite das ordens exibidas, sempre abaixo de Nyquist. A THD informa o intervalo analisado; quando nem a segunda harmônica pode ser medida, aparece como indisponível. Esses resultados são estimativas e dependem da janela de análise e da qualidade da aquisição.
+
+## 💾 Registrar amostras em CSV
+
+Com o modo demo ativo ou a serial recebendo amostras, abra **Aquisição → Iniciar registro CSV…** e escolha o arquivo. O indicador na barra de status mostra a quantidade registrada. Para concluir, use **Aquisição → Parar registro CSV**.
+
+O arquivo contém as colunas `t_s`, `va_V`, `vb_V`, `vc_V` e `origem`, em UTF-8, com vírgula como separador e ponto decimal. O registro começa nas próximas amostras recebidas e continua além da janela dos gráficos, sem manter todo o histórico em memória. A origem identifica demonstração ou aquisição serial e, nesta última, a porta utilizada.
+
+Trocar a fonte de dados, desconectar a serial ou fechar o aplicativo encerra o arquivo. Uma nova aquisição exige iniciar outro registro. Em caso de falha de escrita, o console informa o erro e o registro para; a visualização continua. O histórico SQLite permanece planejado.
 
 ## 📡 Comunicação com a bancada
 
@@ -134,7 +143,8 @@ tests/                  Testes de protocolo, cálculos e interface Qt
 | Leitura serial JSON | 🧪 Implementado em software; validação na DEMOEM pendente |
 | Drivers USB/BDM, porta COM e ligações da bancada | ⏳ A validar |
 | Firmware de telemetria para MCF51EM256 | ⏳ Planejado |
-| Histórico CSV/SQLite | ⏳ Planejado |
+| Registro de amostras CSV | ✅ Implementado para demo e serial |
+| Histórico SQLite | ⏳ Planejado |
 | Compilação ColdFire, gravação BDM e depuração | ⏳ Planejado |
 | Frequência dinâmica, calibração e análise de potência | ⏳ Planejado |
 

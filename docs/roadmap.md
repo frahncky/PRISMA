@@ -13,7 +13,8 @@
 - [ ] Documentar jumpers SCI, pinos e condicionamento de sinais
 - [ ] Firmware de telemetria ColdFire V1
 - [ ] Indicadores físicos de LEDs, GPIO, ADC e LCD
-- [ ] Histórico CSV/SQLite
+- [x] Registro incremental de amostras CSV (demo e serial, com identificação da origem)
+- [ ] Histórico SQLite
 
 ## Fase 3 — programação e depuração
 - [ ] Adaptador CodeWarrior / compilador C para MCF51EM256

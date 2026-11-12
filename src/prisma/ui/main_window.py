@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 
 from prisma.core.measurement import SignalBuffer, analyze
 from prisma.core.protocol import Sample
+from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
 
 COLORS = {"A": "#4ad6ea", "B": "#f2b84b", "C": "#e27eaf"}
@@ -67,6 +68,7 @@ class MainWindow(QMainWindow):
         pg.setConfigOptions(antialias=True, background="#132231", foreground="#b6cad9")
         self.buffer = SignalBuffer()
         self.reader: SerialReader | None = None
+        self.recorder: CsvRecorder | None = None
         self.current_file: Path | None = None
         self.demo_index = 0
         self.mode = "DEMONSTRAÇÃO — SINAIS SINTÉTICOS"
@@ -95,6 +97,54 @@ class MainWindow(QMainWindow):
             "Os gráficos iniciais são SINTÉTICOS. BDM e firmware MCF51EM256 ainda pendentes."
         ))
         info.addAction(about)
+        acquisition = self.menuBar().addMenu("Aquisição")
+        self.record_action = QAction("Iniciar registro CSV…", self)
+        self.record_action.triggered.connect(self.toggle_recording)
+        acquisition.addAction(self.record_action)
+        self.record_label = QLabel("CSV: inativo")
+        self.statusBar().addPermanentWidget(self.record_label)
+
+    def toggle_recording(self) -> None:
+        if self.recorder is not None:
+            self.stop_recording()
+            return
+        if not self.mode.startswith(("DEMONSTRAÇÃO", "AQUISIÇÃO SERIAL REAL")):
+            QMessageBox.information(self, "Registro CSV", "Ative o modo demo ou aguarde amostras da serial.")
+            return
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Registrar amostras CSV", "aquisicao.csv", "CSV (*.csv)"
+        )
+        if not filename:
+            return
+        try:
+            self.recorder = CsvRecorder(Path(filename), self.mode)
+        except OSError as exc:
+            QMessageBox.critical(self, "Erro ao iniciar registro", str(exc))
+            return
+        self.record_action.setText("Parar registro CSV")
+        self.record_label.setText("CSV: gravando · 0 amostras")
+        self._log(f"Registro CSV iniciado: {filename} | {self.mode}")
+
+    def stop_recording(self) -> None:
+        recorder = self.recorder
+        self.recorder = None
+        if recorder is None:
+            return
+        try:
+            recorder.close()
+        except OSError as exc:
+            self._log(f"Erro ao finalizar CSV: {exc}")
+        self.record_action.setText("Iniciar registro CSV…")
+        self.record_label.setText("CSV: inativo")
+        self._log(f"Registro CSV encerrado: {recorder.count} amostras | {recorder.path}")
+
+    def _record_sample(self, sample: Sample) -> None:
+        if self.recorder is not None:
+            try:
+                self.recorder.write(sample)
+            except OSError as exc:
+                self._log(f"Erro de escrita CSV: {exc}")
+                self.stop_recording()
 
     @staticmethod
     def _panel() -> tuple[QFrame, QVBoxLayout]:
@@ -311,6 +361,7 @@ class MainWindow(QMainWindow):
 
     def connect_serial(self) -> None:
         if self.reader is not None and self.reader.isRunning():
+            self.stop_recording()
             self.reader.stop()
             self.reader.wait(1200)
             self._set_mode("DESCONECTADO — SEM AQUISIÇÃO")
@@ -323,6 +374,7 @@ class MainWindow(QMainWindow):
                 "Nenhuma porta COM detectada. Confirme o driver e a configuração serial da placa."
             )
             return
+        self.stop_recording()
         self.buffer.clear()
         self._invalid_sample_logs = 0
         self._set_mode(f"CONECTANDO A {port} — SEM DADOS")
@@ -346,17 +398,20 @@ class MainWindow(QMainWindow):
                 self._log(f"Amostra ignorada: {exc}")
                 self._invalid_sample_logs += 1
             return
+        self._record_sample(sample)
         if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
             port = self.reader.port if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
 
     def _on_disconnected(self) -> None:
+        self.stop_recording()
         self.hw_status.setText("BDM: NÃO VALIDADO\nSERIAL: DESCONECTADA")
         self.b_connect.setText("Conectar serial")
         if not self.mode.startswith("DEMONSTRAÇÃO"):
             self._set_mode("SERIAL DESCONECTADA — DADOS RETIDOS")
 
     def start_demo(self) -> None:
+        self.stop_recording()
         if self.reader is not None and self.reader.isRunning():
             self.reader.stop()
             self.reader.wait(1200)
@@ -371,6 +426,13 @@ class MainWindow(QMainWindow):
         if self.mode.startswith("DEMONSTRAÇÃO"):
             self._generate_demo_batch()
         self._draw_signals()
+        if self.recorder is not None:
+            try:
+                self.recorder.flush()
+                self.record_label.setText(f"CSV: gravando · {self.recorder.count} amostras")
+            except OSError as exc:
+                self._log(f"Erro de escrita CSV: {exc}")
+                self.stop_recording()
 
     def _generate_demo_batch(self) -> None:
         # 2400 amostras/s: Nyquist de 1200 Hz permite analisar até h15 (900 Hz).
@@ -384,7 +446,9 @@ class MainWindow(QMainWindow):
             )
             vb = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[1])
             vc = np.sqrt(2) * 127 * np.sin(2 * np.pi * 60 * tt + phases[2])
-            self.buffer.add(Sample(float(tt), float(va), float(vb), float(vc)))
+            sample = Sample(float(tt), float(va), float(vb), float(vc))
+            self.buffer.add(sample)
+            self._record_sample(sample)
         self.demo_index += 120
 
     def _draw_signals(self) -> None:
@@ -485,6 +549,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Erro ao salvar", str(exc))
 
     def closeEvent(self, event) -> None:
+        self.stop_recording()
         if self.reader is not None and self.reader.isRunning():
             self.reader.stop()
             self.reader.wait(1500)
