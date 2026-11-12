@@ -15,6 +15,7 @@
 - Encoder de firmware C, aplicação HAL e simulador host compilados e testados com GCC.
 - Guia de bancada e roadmap distinguindo entrega de software de homologação física.
 - CI configurado para Linux e Windows.
+- Bibliotecas Qt instaladas no runner Linux e PySide6 limitado a versões anteriores à 6.12 devido a aborto reproduzido no encerramento do Python 3.11 com 6.12.0.
 
 A implementação física ColdFire/PEmicro permanece pendente: a placa não estava disponível durante esta entrega. Nenhum firmware foi gravado nem periférico físico foi homologado.
 

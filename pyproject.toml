@@ -12,7 +12,8 @@ license = {text = "Proprietary - no license granted"}
 authors = [{name = "PRISMA contributors"}]
 dependencies = [
   "numpy>=1.26,<3",
-  "PySide6>=6.7,<7",
+  # 6.12.0 aborta ao finalizar Python 3.11/Linux; 6.11.3 validado no CI.
+  "PySide6>=6.7,<6.12",
   "pyqtgraph>=0.13.5,<0.15",
   "pyserial>=3.5,<4",
 ]

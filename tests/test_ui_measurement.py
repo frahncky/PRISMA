@@ -5,16 +5,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import numpy as np
 import pytest
-from PySide6.QtWidgets import QApplication
 from PySide6.QtWidgets import QFileDialog
 
 from prisma.core.protocol import Sample
 from prisma.ui.main_window import MainWindow
-
-
-@pytest.fixture(scope="module")
-def app():
-    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture

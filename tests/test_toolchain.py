@@ -6,14 +6,8 @@ import sys
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QApplication
 
 from prisma.core.toolchain import CommandRunner, DebugSession, Project, artifact_digest
-
-
-@pytest.fixture(scope='module')
-def app():
-    return QApplication.instance() or QApplication([])
 
 
 def project_file(tmp_path, script):
