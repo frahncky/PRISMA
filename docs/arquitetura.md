@@ -9,6 +9,12 @@ O PRISMA separa quatro camadas:
 
 Qt roda na thread principal; aquisição serial em QThread. Para altas taxas, implementar processamento em worker e decimação.
 
+## Expansão de sistema (gateway ESP32-S3)
+
+O firmware em [`gateway/esp32s3/`](../gateway/esp32s3/README.md) implementa uma arquitetura de referência: recepção de JSON PRISMA v1 da SCI do ColdFire por UART do ESP32-S3, retransmissão pela USB CDC para o PRISMA no PC, resumo de janela no ESP, painel HTML touch por rede local e publicação MQTT/TLS opcional. O gateway não realiza amostragem ADC de sinais elétricos: essa etapa continua no ColdFire/AFE isolado.
+
+O painel touch é **web** (navegador em smartphone/tablet/tela com browser). Não há driver para tela TFT física nem esquema de bateria/carregador neste repositório. O código ainda não foi compilado/testado no ESP32-S3, e a SCI do ColdFire continua pendente de port/validacão da revisão da DEMOEM. Consultar o [guia de ligações](ligacoes-hardware-demoem.md) antes de conectar fios.
+
 ## Suporte ao MCF51EM256
 
 - Verificar driver PEmicro Embedded Multilink no Windows 11.
