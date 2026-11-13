@@ -12,7 +12,7 @@ Aquisição elétrica · Instrumentação · Tela touch · Bateria interna · Wi
 [![Testes PRISMA](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml/badge.svg)](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/Interface-PySide6-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
-![Estado](https://img.shields.io/badge/estado-protótipo_v0.2.0-e3aa45)
+![Desktop v0.2.0](https://img.shields.io/badge/desktop-v0.2.0-3776AB) ![Gateway](https://img.shields.io/badge/gateway-prot%C3%B3tipo_sem_valida%C3%A7%C3%A3o-f0b34f)
 
 [**🧩 Sistema e hardware**](#-sistema-prisma--placa-touch-bateria-e-iot) &nbsp;·&nbsp;
 [**🔌 Guia de ligações**](docs/ligacoes-hardware-demoem.md) &nbsp;·&nbsp;
@@ -59,8 +59,8 @@ flowchart TD
 | **Placa DEMOEM** | MCF51EM256, entradas analógicas, SCI e interface BDM | Hardware-alvo **identificado**; revisão, pinagem definitiva e testes físicos pendentes |
 | **Aquisição de dados reais** | Sensores de tensão e corrente isolados, filtragem, ADC e calibração | **Pendente** de sensores/AFE, mapeamento dos canais, firmware ColdFire e validação |
 | **PRISMA desktop** | Osciloscópio, RMS, fasores, harmônicas/THD, potências, CSV/SQLite e leitura serial | **Implementado em software**; abre em demonstração sem a placa |
-| **Gateway ESP32-S3** | UART, USB CDC, painel web e comunicação MQTT/TLS | Arquitetura e arquivos iniciais disponíveis; integração e testes na placa pendentes |
-| **Interface touch** | Painel web responsivo para navegador com toque | Interface web em desenvolvimento; **nenhum TFT físico conectado** |
+| **Gateway ESP32-S3** | Recepção UART, retransmissão USB CDC, resumo RMS AC, painel web e MQTT/TLS | **Código-fonte publicado** em `gateway/esp32s3/`; build PlatformIO e integração física **não testados** |
+| **Interface touch** | Painel web responsivo servido pelo ESP32-S3 | **HTML/CSS/JS implementado em código**; nenhum TFT físico conectado ou driver de display selecionado |
 | **Bateria interna** | Li-ion/LiPo protegida, carregamento power-path e DC/DC | **Projeto de integração**, sem circuito de carga homologado |
 
 ### Como ligar a plataforma
@@ -73,6 +73,8 @@ flowchart TD
 | **Tela touch** | Módulo de tela compatível com ESP32-S3; o LCD de segmentos **J26/J27 não funciona como TFT** |
 | **Bateria** | Pack protegido + gerenciamento de carga + reguladores apropriados; a **CR2032 só mantém o relógio** |
 | **Dados** | PRISMA JSON v1 a 115200 8N1 quando a vazão permitir; MQTT/TLS para telemetria de resumos via Wi-Fi |
+
+**Código do gateway:** [ESP32-S3 / PlatformIO, firmware e painel web touch](gateway/esp32s3/README.md) · [main.cpp](gateway/esp32s3/src/main.cpp) · [painel HTML](gateway/esp32s3/include/dashboard.h).
 
 **Documentação:** [Guia detalhado da placa](docs/ligacoes-hardware-demoem.md) · [Roteiro de bancada](docs/bancada-demoem.md) · [Protocolo serial](docs/protocolo.md) · [Firmware ColdFire](firmware/README.md) · [Arquitetura](docs/arquitetura.md).
 
@@ -247,6 +249,7 @@ As novidades estão no [histórico de versões](CHANGELOG.md).
 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos instaláveis. |
 | [Bancada DEMOEM](docs/bancada-demoem.md) | Identificação, jumpers, port, vazão serial e critérios físicos de aceitação. |
 | [Ligações da placa DEMOEM](docs/ligacoes-hardware-demoem.md) | Alimentação, sensores e dados reais, SCI/UART, tela touch, bateria interna e gateway IoT ESP32-S3, com limites e testes. |
+| [Gateway ESP32-S3](gateway/esp32s3/README.md) | Código PlatformIO, painel web touch, MQTT/TLS, ligação serial e passos de configuração. |
 | [Roadmap](docs/roadmap.md) | Etapas de aquisição, programação e instrumentação avançada. |
 | [Firmware](firmware/README.md) | Encoder C, simulador host e requisitos do port para DEMOEM. |
 | [Exemplo de telemetria](examples/telemetria_exemplo.jsonl) | Amostras no formato JSON por linha. |
