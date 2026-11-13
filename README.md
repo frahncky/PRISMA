@@ -200,6 +200,7 @@ As novidades estão no [histórico de versões](CHANGELOG.md).
 | [Toolchain](docs/toolchain.md) | Projetos, compilação, gravação e cliente de depuração. |
 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos instaláveis. |
 | [Bancada DEMOEM](docs/bancada-demoem.md) | Identificação, jumpers, port, vazão serial e critérios físicos de aceitação. |
+| [Ligações da placa DEMOEM](docs/ligacoes-hardware-demoem.md) | Alimentação, sensores e dados reais, SCI/UART, tela touch, bateria interna e gateway IoT ESP32-S3, com limites e testes. |
 | [Roadmap](docs/roadmap.md) | Etapas de aquisição, programação e instrumentação avançada. |
 | [Firmware](firmware/README.md) | Encoder C, simulador host e requisitos do port para DEMOEM. |
 | [Exemplo de telemetria](examples/telemetria_exemplo.jsonl) | Amostras no formato JSON por linha. |
