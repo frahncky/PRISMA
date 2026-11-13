@@ -25,3 +25,8 @@ work/
 *.sqlite-wal
 *.sqlite-shm
 prisma-host.exe
+
+# Gateway ESP32-S3: credenciais, chaves e build local
+/gateway/esp32s3/include/secrets.h
+/gateway/esp32s3/.pio/
+/gateway/esp32s3/.vscode/
