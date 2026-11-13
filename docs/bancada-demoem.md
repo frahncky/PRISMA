@@ -2,6 +2,9 @@
 
 A placa pertence ao usuário, mas não está disponível nesta sessão. Nenhum teste físico foi executado. Este roteiro define a evidência necessária para concluir as fases de hardware; os campos em aberto não são valores recomendados.
 
+
+> Para o detalhamento de alimentação, entradas de sensores, SCI/UART, ligação da tela touch, bateria recarregável e gateway IoT, veja o [guia de ligações da DEMOEM](ligacoes-hardware-demoem.md). Ele distingue recursos confirmados da placa de integrações propostas.
+
 ## 1. Identificar a bancada
 
 No Windows conectado à placa, sem instalar nem trocar drivers automaticamente:
