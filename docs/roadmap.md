@@ -10,6 +10,7 @@
 | 2 · Aquisição | CSV/SQLite, diagnóstico e telemetria de estados disponíveis; encoder C testado no host | Pendente de port e validação de hardware |
 | 3 · Programação e depuração | Executor de toolchain e cliente GDB/MI testados com processos de teste; build C host real validado | Pendente de compatibilidade CodeWarrior/PEmicro e testes físicos |
 | 4 · Instrumentação avançada | Cálculos, calibração, janelas, fasores, relatórios, perfis e API de plugins disponíveis | Software entregue para JSON/CSV; validação metrológica e drivers de hardware específicos pendentes |
+| 5 · Gateway, touch, bateria e IoT | Firmware ESP32-S3 de referência e web HMI versionados; projeto power-path documentado | Build ESP32-S3, UART/USB, tela física, MQTT/TLS e bateria devem ser testados em bancada |
 
 ## Fase 1 — protótipo
 
@@ -60,8 +61,24 @@
 - [ ] Drivers proprietários e validação específica em outras placas
 - [ ] Calibração física, precisão, janelas e desempenho comparados com referência de bancada
 
+## Fase 5 — sistema integrado DEMOEM + ESP32-S3
+
+- [x] Código-fonte gateway ESP32-S3 para recepção UART, retransmissão USB CDC e avaliação de amostras JSON v1 (**sem compilação no hardware nesta entrega**)
+- [x] Painel web responsivo para navegador touch com indicador de dados antigos e sem correntes
+- [x] Lógica inicial de estimativa RMS AC e potência ativa em janela de um segundo
+- [x] Código inicial de MQTT com TLS/CA, NTP, reconexão e contadores, sem credenciais no Git
+- [x] Documentação de ligação, power-path, sensores, interfaces, riscos e testes
+- [ ] Compilação e gravação do firmware ESP32-S3 com PlatformIO na placa adquirida
+- [ ] Teste de encaminhamento USB CDC (115200 8N1), perdas, latência e qualidade temporal
+- [ ] Seleção/integração do módulo TFT/touch real com driver e alimentação próprios
+- [ ] Modelo de pack, BMS, carregador power-path, DC/DC e bateria testados e certificados
+- [ ] Validação de segurança da rede HTTP e de MQTT/TLS com broker real
+- [ ] Integração com aquisição física e firmware ColdFire autenticado/calibrado
+
 ## Evidências e documentação
 
+- [Gateway ESP32-S3](../gateway/esp32s3/README.md): firmware e etapas de montagem/compilação, sem validação física.
+- [Ligações DEMOEM](ligacoes-hardware-demoem.md): alimentação, sensores, touch, bateria e IoT.
 - [Bancada DEMOEM](bancada-demoem.md): informações a coletar, orçamento serial e checklist de aceitação física.
 - [Toolchain](toolchain.md): formato do projeto, execução, confirmação de gravação e limites do cliente GDB/MI.
 - [Instrumentação](instrumentacao.md): métodos, semântica das potências, calibração, histórico e relatórios.
