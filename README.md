@@ -16,6 +16,7 @@ Aquisição elétrica · Instrumentação · Tela touch · Bateria interna · Wi
 
 [**🧩 Sistema e hardware**](#-sistema-prisma--placa-touch-bateria-e-iot) &nbsp;·&nbsp;
 [**🔌 Guia de ligações**](docs/ligacoes-hardware-demoem.md) &nbsp;·&nbsp;
+[**📡 Gateway ESP32-S3**](gateway/esp32s3/README.md) &nbsp;·&nbsp;
 [**🚀 Executar**](#-como-executar) &nbsp;·&nbsp;
 [**🗺️ Roadmap**](docs/roadmap.md)
 
