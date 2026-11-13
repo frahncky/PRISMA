@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## Em desenvolvimento — integração DEMOEM + ESP32-S3 (sem alteração da versão do aplicativo)
+
+- README principal atualizado com arquitetura do sistema completo, diagrama, ligações e estado de cada subsistema.
+- Protótipo de gateway ESP32-S3 em PlatformIO para SCI/UART → USB CDC, painel web responsivo, resumos RMS AC/P e MQTT/TLS opcional.
+- Guia de integração elétrica e procedimentos de alimentação, aquisição por sensores isolados, tela e bateria.
+- Credenciais do gateway excluídas do versionamento por `.gitignore`.
+- **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
+
 ## 0.2.0
 
 - Histórico SQLite por sessão, consulta, filtro temporal e exportação CSV.
