@@ -5,15 +5,18 @@
 **Plataforma de Registro, Instrumentação, Sinais, Medição e Análise**<br>
 Programar. Medir. Analisar.
 
-Um ambiente desktop para explorar sinais elétricos e desenvolver sistemas embarcados.
+**Sistema de medição, supervisão e comunicação IoT baseado na DEMOEM / ColdFire MCF51EM256.**
+
+Aquisição elétrica · Instrumentação · Tela touch · Bateria interna · Wi-Fi/MQTT
 
 [![Testes PRISMA](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml/badge.svg)](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![PySide6](https://img.shields.io/badge/Interface-PySide6-41CD52?logo=qt&logoColor=white)](https://doc.qt.io/qtforpython-6/)
 ![Estado](https://img.shields.io/badge/estado-protótipo_v0.2.0-e3aa45)
 
-[**🚀 Como executar**](#-como-executar) &nbsp;·&nbsp;
-[**📡 Protocolo serial**](docs/protocolo.md) &nbsp;·&nbsp;
+[**🧩 Sistema e hardware**](#-sistema-prisma--placa-touch-bateria-e-iot) &nbsp;·&nbsp;
+[**🔌 Guia de ligações**](docs/ligacoes-hardware-demoem.md) &nbsp;·&nbsp;
+[**🚀 Executar**](#-como-executar) &nbsp;·&nbsp;
 [**🗺️ Roadmap**](docs/roadmap.md)
 
 <img src="docs/images/prisma-demo.png" alt="Interface do PRISMA em modo demonstração, com tensões RMS, osciloscópio trifásico, fasores e harmônicas" width="100%">
@@ -32,6 +35,49 @@ A proposta é aproximar programação embarcada e análise de sinais em um mesmo
 
 > [!NOTE]
 > **Protótipo v0.2.0:** inicia em demonstração e funciona sem placa. Histórico, instrumentação avançada e execução configurável de ferramentas estão disponíveis. A aquisição e a toolchain reais na DEMOEM ainda precisam de validação física; não há firmware ColdFire homologado incluído.
+
+## 🧩 Sistema PRISMA — placa, touch, bateria e IoT
+
+O **PRISMA** está evoluindo de uma interface desktop para um **sistema integrado de medição de energia**, preservando a **DEMOEM/MCF51EM256** como unidade de aquisição. A expansão prevista usa **ESP32-S3** para supervisão touch e transmissão IoT. A documentação distingue funções já implementadas de integrações que ainda exigem testes físicos.
+
+```mermaid
+flowchart TD
+    S["Sensores de tensão e corrente isolados"] --> A["Proteção, condicionamento e filtros"]
+    A --> B["DEMOEM / ColdFire MCF51EM256<br/>ADC + amostragem + firmware"]
+    B -->|"SCI / UART; conferir níveis e jumpers"| G["Gateway ESP32-S3"]
+    G -->|"USB CDC / JSON"| P["PRISMA Studio Windows<br/>RMS, osciloscópio, THD, fasores e histórico"]
+    G -->|"HTTP local"| H["Painel web touch<br/>tela física ainda a selecionar"]
+    G -->|"Wi-Fi / MQTT TLS"| I["Servidor IoT"]
+    BAT["Bateria protegida + carregador power-path + DC/DC"] -. "alimentação proposta" .-> B
+    BAT -. "alimentação proposta" .-> G
+```
+
+### Componentes e situação real
+
+| Módulo | Recursos | Estado |
+| --- | --- | --- |
+| **Placa DEMOEM** | MCF51EM256, entradas analógicas, SCI e interface BDM | Hardware-alvo **identificado**; revisão, pinagem definitiva e testes físicos pendentes |
+| **Aquisição de dados reais** | Sensores de tensão e corrente isolados, filtragem, ADC e calibração | **Pendente** de sensores/AFE, mapeamento dos canais, firmware ColdFire e validação |
+| **PRISMA desktop** | Osciloscópio, RMS, fasores, harmônicas/THD, potências, CSV/SQLite e leitura serial | **Implementado em software**; abre em demonstração sem a placa |
+| **Gateway ESP32-S3** | UART, USB CDC, painel web e comunicação MQTT/TLS | Arquitetura e arquivos iniciais disponíveis; integração e testes na placa pendentes |
+| **Interface touch** | Painel web responsivo para navegador com toque | Interface web em desenvolvimento; **nenhum TFT físico conectado** |
+| **Bateria interna** | Li-ion/LiPo protegida, carregamento power-path e DC/DC | **Projeto de integração**, sem circuito de carga homologado |
+
+### Como ligar a plataforma
+
+| Subsistema | Caminho e cuidados |
+| --- | --- |
+| **Alimentação DEMOEM** | USB 5 V ou jack 6 V DC centro positivo, segundo manual e revisão; conferir **J3/J4/J24** |
+| **Medições reais** | Transdutores **isolados**, proteção e condicionamento; revisar **J29/J38**, ADC e sinais de demonstração |
+| **Gateway IoT** | SCI3 na DEMOEM (referência **J6**, seleção **J9/J10**, interface **J7/J8**) → UART do ESP32-S3, após validação elétrica |
+| **Tela touch** | Módulo de tela compatível com ESP32-S3; o LCD de segmentos **J26/J27 não funciona como TFT** |
+| **Bateria** | Pack protegido + gerenciamento de carga + reguladores apropriados; a **CR2032 só mantém o relógio** |
+| **Dados** | PRISMA JSON v1 a 115200 8N1 quando a vazão permitir; MQTT/TLS para telemetria de resumos via Wi-Fi |
+
+**Documentação:** [Guia detalhado da placa](docs/ligacoes-hardware-demoem.md) · [Roteiro de bancada](docs/bancada-demoem.md) · [Protocolo serial](docs/protocolo.md) · [Firmware ColdFire](firmware/README.md) · [Arquitetura](docs/arquitetura.md).
+
+> [!WARNING]
+> **Ainda não há medição real homologada na DEMOEM, firmware ColdFire validado ou tela/bateria física integrada.** Nunca conectar tensão de rede diretamente ao ADC, ligar bateria à lógica ou acoplar alimentação USB/externa sem verificar isolamento, reguladores e retornos de corrente.
 
 ## ✨ Recursos
 
