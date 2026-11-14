@@ -131,3 +131,12 @@ def test_phase_rotation():
     assert sequence_components({"A": 1, "B": a, "C": a * a}).rotation == "ABC"
     assert sequence_components({"A": 1, "B": a * a, "C": a}).rotation == "ACB"
     assert sequence_components({"A": 1, "B": 1, "C": 1}).rotation is None
+
+
+def test_crest_factor_sine_and_flat():
+    import numpy as np
+    from prisma.core.measurement import crest_factors
+    t = np.arange(1000) / 1000
+    values = np.column_stack((np.sin(2 * np.pi * 10 * t), np.ones(1000), np.sign(np.sin(2 * np.pi * 10 * t + 0.1))))
+    cf = crest_factors(values)
+    assert abs(cf[0] - 2 ** 0.5) < 1e-3 and cf[1] is None and abs(cf[2] - 1) < 0.05

@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import SignalBuffer, analyze, line_voltages, sequence_components
+from prisma.core.measurement import SignalBuffer, analyze, crest_factors, line_voltages, sequence_components
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
@@ -812,6 +812,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
             rows.append(("Potências", "sem correntes"))
         source = ("Demonstração (sintético)" if self.mode.startswith("DEMONSTRAÇÃO")
                   else "Pino do ADC (sem calibração)" if self._pin_volts() else "Porta serial")
+        crest = crest_factors(values)
+        rows.append(("Fator de crista A/B/C", " / ".join("—" if c is None else f"{c:.2f}" for c in crest)))
         lines = line_voltages(result.phasors)
         rows.append(("Linha AB / BC / CA", " / ".join(f"{abs(v):.3f}" for v in lines.values()) + " V"))
         seq = sequence_components(result.phasors)

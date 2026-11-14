@@ -196,3 +196,11 @@ def line_voltages(phasors: dict[str, complex]) -> dict[str, complex]:
     """Fasores de linha (fundamental): Vab = Va − Vb, Vbc = Vb − Vc, Vca = Vc − Va."""
     return {"AB": phasors["A"] - phasors["B"], "BC": phasors["B"] - phasors["C"],
             "CA": phasors["C"] - phasors["A"]}
+
+
+def crest_factors(values: np.ndarray) -> list[float | None]:
+    """Pico / RMS de cada coluna, sem a componente contínua (senoide pura = √2)."""
+    centered = values - values.mean(axis=0)
+    rms = np.sqrt(np.mean(centered**2, axis=0))
+    peak = np.abs(centered).max(axis=0)
+    return [float(p / r) if r > 1e-12 else None for p, r in zip(peak, rms)]
