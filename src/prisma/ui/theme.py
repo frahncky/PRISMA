@@ -65,8 +65,8 @@ QLabel {{ background: transparent; }}
 QToolTip {{ background: {SURFACE_2}; color: {TEXT}; border: 1px solid {BORDER}; padding: 4px; }}
 
 QFrame#rail {{ background: {SURFACE}; border-right: 1px solid {BORDER}; }}
-QLabel#brand {{ font-size: 17px; font-weight: 800; letter-spacing: 3px; color: #ffffff; }}
-QLabel#brandSub {{ color: {SUBTLE}; font-size: 10px; }}
+QLabel#brand {{ font-size: 19px; font-weight: 800; letter-spacing: 4px; color: #ffffff; }}
+QLabel#brandSub {{ color: {ACCENT}; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }}
 QLabel#railSection {{ color: {SUBTLE}; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }}
 QPushButton#nav {{ text-align: left; background: transparent; border: none; border-radius: 8px;
     padding: 9px 12px; color: {MUTED}; font-size: 13px; }}
@@ -81,6 +81,10 @@ QFrame#card {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius:
 QLabel#cardCaption {{ color: {MUTED}; font-size: 11px; font-weight: 600; }}
 QLabel#cardValue {{ font-size: 24px; font-weight: 700; }}
 QLabel#cardHint {{ color: {SUBTLE}; font-size: 10px; }}
+QLabel#meterHead {{ color: {MUTED}; font-size: 11px; font-weight: 700; }}
+QLabel#meterRow {{ color: {MUTED}; font-size: 13px; }}
+QLabel#meterCell {{ color: {TEXT}; font-size: 15px; font-weight: 600; }}
+QLabel#meterTotal {{ color: #ffffff; font-size: 15px; font-weight: 700; }}
 QLabel#panelTitle {{ color: {MUTED}; font-size: 11px; font-weight: 700; letter-spacing: 1px; }}
 QLabel#muted {{ color: {MUTED}; }}
 QLabel#section {{ color: {SUBTLE}; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }}

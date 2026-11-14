@@ -25,7 +25,8 @@ def test_painel_mostra_valores_grandes(app, spoken):
     assert panel.tiles["freq"].value.text() == "60,00 Hz"
     assert panel.tiles["pf"].value.text() == "0,900"
     assert panel.tiles["power"].value.text().endswith("kW")
-    assert panel.tiles["seq"].value.text() == "ABC"
+    assert panel.tiles["pf"].hint.text() == "indutivo"
+    assert panel.tiles["energy"].value.text() == "---"  # sem contador de energia
     assert panel.alert_label.isHidden()
     panel.close()
 
@@ -47,6 +48,20 @@ def test_alerta_e_sem_correntes(app, spoken):
     assert not panel.alert_label.isHidden() and "Desequilíbrio" in panel.alert_label.text()
     assert panel.tiles["iA"].value.text() == "---" and panel.tiles["iA"].hint.text() == "sem correntes"
     assert "PRODIST" in panel.tiles["unb"].hint.text()
+    panel.close()
+
+
+def test_energia_acumulada_no_painel(app, spoken):
+    from prisma.core.measurement import EnergyCounter
+
+    result = _measurement()
+    counter = EnergyCounter()
+    for minute in range(61):  # 1 h a 1714,5 W, em passos de 60 s
+        counter.update(60.0 * minute, result)
+    panel = TouchPanel(lambda: (result, "DEMONSTRAÇÃO"), speaker=spoken.append, energy=lambda: counter)
+    assert panel.tiles["energy"].value.text() == "1,71 kWh"
+    panel.tiles["energy"].click()
+    assert spoken == ["A energia ativa acumulada é 1,71 quilowatts-hora."]
     panel.close()
 
 

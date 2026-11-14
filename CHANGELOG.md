@@ -6,6 +6,10 @@
 - Protótipo de gateway ESP32-S3 em PlatformIO para SCI/UART → USB CDC, painel web responsivo, resumos RMS AC/P e MQTT/TLS opcional.
 - Guia de integração elétrica e procedimentos de alimentação, aquisição por sensores isolados, tela e bateria.
 - Credenciais do gateway excluídas do versionamento por `.gitignore`.
+- Instrumentação no formato de multimedidor: quadro V, I, P, Q, S, FP (ind/cap) e ângulo por fase + trifásico; frequência, THD e energia ativa/reativa acumuladas (kWh/kvarh, botão Zerar).
+- Card "Qualidade da tensão" enxuto (tensões de linha, desequilíbrio, sequência, THD); removidos fator de crista, componentes +/−/0, origem, calibração e versão da lateral.
+- Novo ícone do PRISMA (mais legível em tamanhos pequenos) e `prisma.ico` com 16–256 px.
+- Painel touch com potência e FP trifásicos, energia acumulada; sequência inversa vira alerta.
 - **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
 
 ## 0.2.0

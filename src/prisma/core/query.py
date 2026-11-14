@@ -11,7 +11,7 @@ import math
 import re
 import unicodedata
 
-from .measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, sequence_components
+from .measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, sequence_components, totals
 
 PHASES = ("A", "B", "C")
 
@@ -117,7 +117,11 @@ def answer(question: str, result: Measurement | None) -> Answer:
         values = {p: powers[p].power_factor for p in phases}
         if any(v is None for v in values.values()):
             return Answer("O fator de potência não está disponível.")
-        return Answer(_per_phase("O fator de potência", phases, values, "", 3).replace(" .", "."))
+        text = _per_phase("O fator de potência", phases, values, "", 3).replace(" .", ".")
+        total = totals(result).power_factor
+        if len(phases) == 3 and total is not None:
+            text = text[:-1] + f". Total, {_number(total, 3)}."
+        return Answer(text)
     field, name, unit = {"active": ("active_w", "A potência ativa", "watts"),
                          "reactive": ("reactive_fundamental_var", "A potência reativa", "volt-ampères reativos"),
                          "apparent": ("apparent_va", "A potência aparente", "volt-ampères")}[quantity]
@@ -132,7 +136,10 @@ def alerts(result: Measurement) -> list[str]:
     found = []
     if result.thd_percent is not None and result.thd_percent > LIMIT_THD_PERCENT:
         found.append(f"THD da fase A em {_number(result.thd_percent, 1)} %, acima de {LIMIT_THD_PERCENT:.0f} %")
-    unbalance = sequence_components(result.phasors).unbalance_percent
+    seq = sequence_components(result.phasors)
+    if seq.rotation == "ACB":
+        found.append("Sequência de fases inversa (ACB)")
+    unbalance = seq.unbalance_percent
     if unbalance is not None and unbalance > LIMIT_UNBALANCE_PERCENT:
         found.append(f"Desequilíbrio de {_number(unbalance, 2)} %, acima de {LIMIT_UNBALANCE_PERCENT:.0f} %")
     return found

@@ -494,8 +494,7 @@ class FeaturesMixin:
         self.frequency_label.setText("--- Hz")
         self.selected_phasor.setText("Aguardando análise válida.")
         self.power_view.clearContents()
-        for label in self.metric_labels.values():
-            label.setText("--- V")
+        self.meter.clear()
         self.phasor.clear()
         self.harmonics.clear()
         for curve in self.curves.values():

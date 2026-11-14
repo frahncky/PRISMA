@@ -211,3 +211,49 @@ def crest_factors(values: np.ndarray) -> list[float | None]:
     rms = np.sqrt(np.mean(centered**2, axis=0))
     peak = np.abs(centered).max(axis=0)
     return [float(p / r) if r > 1e-12 else None for p, r in zip(peak, rms)]
+
+
+@dataclass(frozen=True)
+class Totals:
+    """Totais trifásicos: P, Q1 e S somados; FP = P / S (aritmético)."""
+    active_w: float
+    reactive_var: float
+    apparent_va: float
+    power_factor: float | None
+
+
+def totals(result: Measurement) -> Totals | None:
+    if not result.power:
+        return None
+    p = sum(x.active_w for x in result.power.values())
+    q = sum(x.reactive_fundamental_var for x in result.power.values())
+    s = sum(x.apparent_va for x in result.power.values())
+    return Totals(p, q, s, float(np.clip(p / s, -1, 1)) if s > 1e-12 else None)
+
+
+@dataclass
+class EnergyCounter:
+    """Energia ativa (Wh) e reativa (varh) integradas no tempo das amostras.
+
+    Cada análise soma P × Δt desde a anterior. Um salto para trás (buffer
+    reiniciado) ou uma lacuna maior que ``max_gap_s`` só ressincroniza.
+    """
+    active_wh: float = 0.0
+    reactive_varh: float = 0.0
+    seconds: float = 0.0
+    max_gap_s: float = 60.0
+    _last_t: float | None = None
+
+    def reset(self) -> None:
+        self.active_wh = self.reactive_varh = self.seconds = 0.0
+        self._last_t = None
+
+    def update(self, t_end: float, result: Measurement) -> None:
+        total = totals(result)
+        if total is not None and self._last_t is not None:
+            dt = t_end - self._last_t
+            if 0 < dt <= self.max_gap_s:
+                self.active_wh += total.active_w * dt / 3600
+                self.reactive_varh += total.reactive_var * dt / 3600
+                self.seconds += dt
+        self._last_t = t_end

@@ -19,7 +19,8 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, SignalBuffer, analyze, line_voltages, sequence_components
+from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, EnergyCounter, SignalBuffer, analyze,
+                                     line_voltages, sequence_components)
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
@@ -27,18 +28,13 @@ from prisma.core.history import SqliteRecorder
 from prisma.ui import theme
 from prisma.ui.editor import CodeEditor, EditorPanel
 from prisma.ui.features import FeaturesMixin
+from prisma.ui.meter import MeterTable, degrees as _degrees, si
 
 COLORS = theme.PHASE
 # DEMOEM: ADC de 16 bits com VREFH = VDD do regulador de 3,3 V (confirmar com multímetro).
 ADC_VREF_V = 3.3
 ADC_FULL_SCALE = 65535
 ICON_PATH = Path(__file__).with_name("assets") / "prisma.svg"
-
-
-def _degrees(phasor: complex, decimals: int) -> str:
-    """Ângulo em graus sem "-0.0" (zero negativo de arredondamento)."""
-    value = round(float(np.degrees(np.angle(phasor))), decimals) + 0.0
-    return f"{value:.{decimals}f}"
 
 
 def app_icon() -> QIcon:
@@ -67,7 +63,7 @@ STYLE = theme.STYLE
 class MainWindow(FeaturesMixin, QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle(f"PRISMA Studio | Instrumentação e Sistemas Embarcados — v{__version__}")
+        self.setWindowTitle("PRISMA · Analisador de energia")
         self.resize(1480, 920)
         self.setMinimumSize(1060, 700)
         self.setStyleSheet(STYLE)
@@ -78,6 +74,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.raw_counts = False
         pg.setConfigOptions(antialias=True, background=theme.PLOT_BG, foreground=theme.MUTED)
         self.buffer = SignalBuffer()
+        self.energy = EnergyCounter()
         self.reader: SerialReader | None = None
         self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
@@ -85,6 +82,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.mode = "DEMONSTRAÇÃO — SINAIS SINTÉTICOS"
         self._invalid_sample_logs = 0
         self._build_ui()
+        self.reset_energy()
         self._build_menu()
         self._build_features()
         self.refresh_ports()
@@ -170,7 +168,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self._log(f"Erro de escrita CSV: {exc}")
                 self.stop_recording()
 
-    def _card(self, caption: str, color: str = theme.TEXT, hint: str = "") -> tuple[QFrame, QLabel, QLabel]:
+    def _card(self, caption: str, color: str = theme.TEXT, hint: str = "",
+              action: QWidget | None = None) -> tuple[QFrame, QLabel, QLabel]:
         frame = QFrame()
         frame.setObjectName("card")
         layout = QVBoxLayout(frame)
@@ -183,7 +182,14 @@ class MainWindow(FeaturesMixin, QMainWindow):
         value.setStyleSheet(f"color: {color};")
         sub = QLabel(hint)
         sub.setObjectName("cardHint")
-        layout.addWidget(title)
+        if action is None:
+            layout.addWidget(title)
+        else:
+            head = QHBoxLayout()
+            head.addWidget(title)
+            head.addStretch(1)
+            head.addWidget(action)
+            layout.addLayout(head)
         layout.addWidget(value)
         layout.addWidget(sub)
         return frame, value, sub
@@ -225,13 +231,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         side.setSpacing(4)
         brand_row = QHBoxLayout()
         logo = QLabel()
-        logo.setPixmap(app_icon().pixmap(QSize(34, 34)))
+        logo.setPixmap(app_icon().pixmap(QSize(42, 42)))
         brand_row.addWidget(logo)
         names = QVBoxLayout()
         names.setSpacing(0)
         brand = QLabel("PRISMA")
         brand.setObjectName("brand")
-        sub = QLabel("Programar · Medir · Analisar")
+        sub = QLabel("Analisador de energia")
         sub.setObjectName("brandSub")
         names.addWidget(brand)
         names.addWidget(sub)
@@ -253,10 +259,6 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.hw_status = QLabel()
         side.addWidget(self.hw_status)
         self._set_link_status("Serial desconectada", theme.SUBTLE)
-        version = QLabel(f"v{__version__}")
-        version.setObjectName("brandSub")
-        side.addSpacing(8)
-        side.addWidget(version)
         outer.addWidget(rail)
 
         content = QVBoxLayout()
@@ -351,16 +353,25 @@ class MainWindow(FeaturesMixin, QMainWindow):
         dash.setSpacing(12)
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
-        self.metric_labels = {}
-        for phase in ("A", "B", "C"):
-            card, value, _ = self._card(f"Fase {phase} · RMS", theme.PHASE[phase], "tensão")
-            value.setText("--- V")
-            metrics.addWidget(card)
-            self.metric_labels[phase] = value
-        card, self.frequency_label, self.frequency_hint = self._card("Frequência", hint="fundamental")
-        metrics.addWidget(card)
-        card, self.thd_label, self.thd_hint = self._card("THD · fase A", hint="h2 a h15")
-        metrics.addWidget(card)
+        self.meter = MeterTable()
+        self.metric_labels = self.meter.voltage_labels
+        metrics.addWidget(self.meter, stretch=3)
+        kpis = QGridLayout()
+        kpis.setSpacing(12)
+        card, self.frequency_label, self.frequency_hint = self._card("Frequência", theme.ACCENT, "fundamental")
+        kpis.addWidget(card, 0, 0)
+        card, self.thd_label, self.thd_hint = self._card("THD tensão · fase A", hint="h2 a h15")
+        kpis.addWidget(card, 0, 1)
+        reset = QPushButton("Zerar")
+        reset.setObjectName("ghost")
+        reset.setToolTip("Zerar os contadores de energia")
+        reset.clicked.connect(lambda _=False: self.reset_energy())
+        card, self.energy_label, self.energy_hint = self._card("Energia ativa", theme.SUCCESS, "aguardando correntes",
+                                                               action=reset)
+        kpis.addWidget(card, 1, 0)
+        card, self.reactive_energy_label, _ = self._card("Energia reativa", hint="fundamental")
+        kpis.addWidget(card, 1, 1)
+        metrics.addLayout(kpis, stretch=2)
         dash.addLayout(metrics)
 
         self.wave = self._plot("Osciloscópio")
@@ -412,7 +423,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         details_card.setObjectName("card")
         details_layout = QVBoxLayout(details_card)
         details_layout.setContentsMargins(16, 12, 16, 12)
-        details_title = QLabel("RESUMO")
+        details_title = QLabel("QUALIDADE DA TENSÃO")
         details_title.setObjectName("panelTitle")
         details_layout.addWidget(details_title)
         self.details = QLabel("Aguardando amostras…")
@@ -425,7 +436,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         bottom.addWidget(self._wrap(self.harmonics), stretch=5)
         bottom.addWidget(details_card, stretch=4)
         for widget in (bottom.itemAt(i).widget() for i in range(bottom.count())):
-            widget.setMaximumHeight(270)
+            widget.setMaximumHeight(250)
         dash.addLayout(bottom, stretch=9)
         self.tabs.addTab(dashboard, "Instrumentação")
 
@@ -466,7 +477,6 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.btn_console.setCheckable(True)
         self.btn_console.toggled.connect(self.console.setVisible)
         self.statusBar().addPermanentWidget(self.btn_console)
-        self.statusBar().showMessage(f"PRISMA v{__version__} · sinais simulados")
         self._set_mode(self.mode)
 
     def _set_link_status(self, text: str, color: str) -> None:
@@ -528,6 +538,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._session_t0, self._last_record_t = None, float("-inf")
         self.stop_recording()
         self.buffer.clear()
+        self.reset_energy()
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Aguardando telemetria de estados do firmware.")
         self._invalid_sample_logs = 0
@@ -646,6 +657,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 return
         self.reader = None
         self.buffer.clear()
+        self.reset_energy()
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         self.demo_index = 0
@@ -728,8 +740,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.frequency_label.setText("—")
             self.thd_label.setText("—")
             self.power_view.clearContents()
-            for label in self.metric_labels.values():
-                label.setText("--- V")
+            self.meter.clear()
             self.phasor.clear()
             self.harmonics.clear()
             weak = "estimar frequência" in str(exc) or "instável" in str(exc)
@@ -753,9 +764,6 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._last_frequency = result.frequency_hz
         self.frequency_label.setText(f"{result.frequency_hz:.2f} Hz")
         self.frequency_hint.setText(("automática" if self.frequency_combo.currentIndex() == 2 else "referência fixa"))
-        for phase in ("A", "B", "C"):
-            self.metric_labels[phase].setText(
-                f"{result.rms[phase]:.3f} V" if self._pin_volts() else f"{result.rms[phase]:.2f} V")
         self.phasor.clear()
         self.phasor.addItem(pg.InfiniteLine(
             pos=0, angle=0, pen=pg.mkPen(theme.BORDER, width=1)
@@ -799,51 +807,55 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.thd_label.setText("—")
             self.harmonics.setYRange(0, 5, padding=0)
             thd_text = "THD indisponível (taxa insuficiente)"
+        self.meter.show_result(result, rotation, self._pin_volts())
+        self._show_energy(result, float(t[-1]))
         self.power_view.clearContents()
-        rows = []
-        for phase in ("A", "B", "C"):
-            ph = result.phasors[phase] * rotation
-            rows.append((f"<span style='color:{COLORS[phase]}'>■</span> Fasor {phase}",
-                         f"{abs(ph):.3f} V ∠ {_degrees(ph, 1)}°"))
-        if result.power:
-            p_total = sum(p.active_w for p in result.power.values())
-            q_total = sum(p.reactive_fundamental_var for p in result.power.values())
-            rows.append(("ΣP / ΣQ1", f"{p_total:.1f} W / {q_total:.1f} var"))
-            for row, (phase, power) in enumerate(result.power.items()):
-                cells = [phase, f"{result.current_rms[phase]:.3f}", f"{power.active_w:.3f}",
-                    f"{power.reactive_fundamental_var:.3f}", f"{power.apparent_va:.3f}",
-                    f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
-                for column, value in enumerate(cells):
-                    self.power_view.setItem(row, column, QTableWidgetItem(value))
-        else:
-            rows.append(("Potências", "sem correntes"))
-        source = ("Demonstração (sintético)" if self.mode.startswith("DEMONSTRAÇÃO")
-                  else "Pino do ADC (sem calibração)" if self._pin_volts() else "Porta serial")
-        crest = result.crest.values()
-        rows.append(("Fator de crista A/B/C", " / ".join("—" if c is None else f"{c:.2f}" for c in crest)))
-        lines = line_voltages(result.phasors)
-        rows.append(("Linha AB / BC / CA", " / ".join(f"{abs(v):.3f}" for v in lines.values()) + " V"))
+        for row, (phase, power) in enumerate(result.power.items()):
+            cells = [phase, f"{result.current_rms[phase]:.3f}", f"{power.active_w:.3f}",
+                f"{power.reactive_fundamental_var:.3f}", f"{power.apparent_va:.3f}",
+                f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
+            for column, value in enumerate(cells):
+                self.power_view.setItem(row, column, QTableWidgetItem(value))
+        volt = "{:.3f} V" if self._pin_volts() else "{:.1f} V"
+        rows = [(f"Tensão de linha {name}", volt.format(abs(v))) for name, v in line_voltages(result.phasors).items()]
         seq = sequence_components(result.phasors)
         if seq.unbalance_percent is not None:
-            rows.append(("Sequência +/−/0", f"{seq.positive:.3f} / {seq.negative:.3f} / {seq.zero:.3f} V"))
-            order = {"ABC": "ABC (direta)", "ACB": f"<span style='color:{theme.WARNING}'>ACB (inversa)</span>"}
-            rows.append(("Ordem das fases", order.get(seq.rotation, "indefinida")))
             unb = f"{seq.unbalance_percent:.1f} %"
             if seq.unbalance_percent > LIMIT_UNBALANCE_PERCENT:
                 unb = f"<span style='color:{theme.WARNING}'>⚠ {unb} (limite {LIMIT_UNBALANCE_PERCENT:.0f} %)</span>"
-            rows.append(("Desequilíbrio V2/V1", unb))
-        rows.append(("THD fase A", thd_text))
-        rows.append(("Origem", source))
-        rows.append(("Calibração", self.calibration.name))
+            rows.append(("Desequilíbrio", unb))
+            order = {"ABC": "ABC · direta", "ACB": f"<span style='color:{theme.WARNING}'>⚠ ACB · inversa</span>"}
+            rows.append(("Sequência de fases", order.get(seq.rotation, "indefinida")))
+        rows.append(("THD tensão · fase A", thd_text))
         self.details.setText(
-            "<table width='100%' cellspacing='0' cellpadding='3'>"
+            "<table width='100%' cellspacing='0' cellpadding='4'>"
             + "".join(f"<tr><td style='color:{theme.MUTED}'>{k}</td>"
-                      f"<td align='right' style='color:{theme.TEXT}'>{v}</td></tr>" for k, v in rows)
-            + f"</table><p style='color:{theme.SUBTLE}; font-size:10px'>Estimativas sem certificação metrológica.</p>")
+                      f"<td align='right' style='color:{theme.TEXT}; font-weight:600'>{v}</td></tr>" for k, v in rows)
+            + "</table>")
         self.record_trend(result)
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))
+
+    def _show_energy(self, result, t_end: float) -> None:
+        self.energy.update(t_end, result)
+        if not result.power:
+            self.energy_label.setText("---")
+            self.reactive_energy_label.setText("---")
+            self.energy_hint.setText("sem canais de corrente")
+            return
+        self.energy_label.setText(si(self.energy.active_wh, "Wh"))
+        self.reactive_energy_label.setText(si(self.energy.reactive_varh, "varh"))
+        minutes, seconds = divmod(int(self.energy.seconds), 60)
+        hours, minutes = divmod(minutes, 60)
+        self.energy_hint.setText(f"acumulada em {hours:d}:{minutes:02d}:{seconds:02d}")
+
+    def reset_energy(self) -> None:
+        self.energy.reset()
+        if hasattr(self, "energy_label"):
+            self.energy_label.setText("0 Wh")
+            self.reactive_energy_label.setText("0 varh")
+            self.energy_hint.setText("acumulada em 0:00:00")
 
     def _trigger_index(self, t: np.ndarray, values: np.ndarray, span: float) -> int | None:
         """Primeira subida do canal com mais sinal que ainda deixa `span` segundos à frente."""
@@ -889,7 +901,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         from prisma.ui.touch_panel import TouchPanel
         panel = getattr(self, "touch_panel", None)
         if panel is None or not panel.isVisible():
-            panel = TouchPanel(lambda: (self.last_analysis[0] if self.last_analysis else None, self.mode), self)
+            panel = TouchPanel(lambda: (self.last_analysis[0] if self.last_analysis else None, self.mode), self,
+                               energy=lambda: self.energy)
             panel.setWindowIcon(self.windowIcon())
             self.touch_panel = panel
         if self.screen() is not None:

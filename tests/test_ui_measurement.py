@@ -29,7 +29,9 @@ def test_demo_exibe_quinze_harmonicas(window):
     window._draw_signals()
     assert "h2–h15" in window.details.text()
     assert "---" not in window.metric_labels["A"].text()
-    assert "Demonstração (sintético)" in window.details.text()
+    assert window.meter.cells[("pf", "T")].text() == "0.900 ind"
+    assert window.meter.cells[("p", "T")].text().endswith("kW")
+    assert "Tensão de linha AB" in window.details.text()
 
 
 @pytest.mark.parametrize("sample_rate, expected", [
@@ -305,8 +307,8 @@ def test_rajadas_usam_fase_a_como_referencia_dos_fasores(window):
                         for k in range(3))) for i in range(500))
         window._on_block(SampleBlock(seq, fs, ("ad4", "ad5", "ad6"), samples))
         window._draw_signals()
-        text = window.details.text()
-        assert "∠ 0.0°" in text and ("∠ -120.0°" in text or "∠ -119.9°" in text or "∠ -120.1°" in text)
+        assert window.meter.cells[("ang", "A")].text() == "0.0°"
+        assert window.meter.cells[("ang", "B")].text() in ("-120.0°", "-119.9°", "-120.1°")
     assert window.phasor_reference.currentIndex() == 1
 
 

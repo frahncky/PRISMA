@@ -68,3 +68,27 @@ def test_alerta_de_desequilibrio_no_resumo():
     text = answer("está tudo bem?", m).text
     assert "Alertas:" in text and "PRODIST" not in text
     assert "Sem alertas." in answer("resumo", _measurement()).text
+
+
+def test_fator_de_potencia_total_e_sequencia_inversa():
+    assert answer("qual o fator de potência", _measurement()).text.endswith("Total, 0,900.")
+    result = _measurement()
+    swapped = type(result)(**{**result.__dict__, "phasors": {"A": result.phasors["A"], "B": result.phasors["C"],
+                                                               "C": result.phasors["B"]}})
+    assert "Sequência de fases inversa (ACB)" in alerts(swapped)
+
+
+def test_contador_de_energia_integra_e_ressincroniza():
+    from prisma.core.measurement import EnergyCounter, totals
+
+    result = _measurement()
+    counter = EnergyCounter()
+    counter.update(10.0, result)
+    counter.update(10.5, result)
+    p = totals(result).active_w
+    assert counter.active_wh == pytest.approx(p * 0.5 / 3600)
+    counter.update(2.0, result)      # buffer reiniciado: só ressincroniza
+    counter.update(500.0, result)    # lacuna > 60 s: ignorada
+    assert counter.seconds == pytest.approx(0.5)
+    counter.reset()
+    assert counter.active_wh == 0 and counter.seconds == 0

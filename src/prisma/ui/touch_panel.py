@@ -12,11 +12,13 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy,
                                QVBoxLayout, QWidget)
 
-from prisma.core.measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, sequence_components
+from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, EnergyCounter, Measurement,
+                                     sequence_components, totals)
 from prisma.core.query import alerts, answer
 from prisma.ui import theme
 
 MeasurementSource = Callable[[], tuple[Measurement | None, str]]
+ENERGY_QUESTION = "qual a energia acumulada"
 
 TOUCH_STYLE = f"""
 QWidget#touchPanel {{ background: {theme.BG}; }}
@@ -71,12 +73,14 @@ class Tile(QPushButton):
 
 class TouchPanel(QWidget):
     def __init__(self, source: MeasurementSource, parent: QWidget | None = None,
-                 speaker: Callable[[str], None] | None = None, listener=None) -> None:
+                 speaker: Callable[[str], None] | None = None, listener=None,
+                 energy: Callable[[], EnergyCounter | None] | None = None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setObjectName("touchPanel")
         self.setWindowTitle("PRISMA · Painel")
         self.setStyleSheet(theme.STYLE + TOUCH_STYLE)
         self.source = source
+        self.energy = energy or (lambda: None)
         self._speech = None
         self.speaker = speaker or self._speak_with_qt
         self.last_answer = ""
@@ -94,6 +98,12 @@ class TouchPanel(QWidget):
         root.setSpacing(14)
 
         top = QHBoxLayout()
+        logo = QLabel()
+        from PySide6.QtCore import QSize
+        from prisma.ui.main_window import app_icon
+        logo.setPixmap(app_icon().pixmap(QSize(48, 48)))
+        top.addWidget(logo)
+        top.addSpacing(6)
         title = QLabel("PRISMA")
         title.setObjectName("touchTitle")
         top.addWidget(title)
@@ -134,12 +144,12 @@ class TouchPanel(QWidget):
             ("iA", "Corrente · fase A", "qual a corrente da fase A", theme.PHASE["A"]),
             ("iB", "Corrente · fase B", "qual a corrente da fase B", theme.PHASE["B"]),
             ("iC", "Corrente · fase C", "qual a corrente da fase C", theme.PHASE["C"]),
-            ("freq", "Frequência", "qual a frequência", theme.ACCENT),
             ("power", "Potência ativa total", "qual a potência", theme.TEXT),
-            ("pf", "Fator de potência · A", "qual o fator de potência da fase A", theme.TEXT),
-            ("thd", "THD · fase A", "qual a distorção harmônica", theme.TEXT),
-            ("unb", "Desequilíbrio", "qual o desequilíbrio", theme.TEXT),
-            ("seq", "Sequência de fases", "qual a sequência de fases", theme.TEXT),
+            ("pf", "Fator de potência total", "qual o fator de potência", theme.TEXT),
+            ("freq", "Frequência", "qual a frequência", theme.ACCENT),
+            ("energy", "Energia ativa", ENERGY_QUESTION, theme.SUCCESS),
+            ("thd", "THD tensão · fase A", "qual a distorção harmônica", theme.TEXT),
+            ("unb", "Desequilíbrio de tensão", "qual o desequilíbrio", theme.TEXT),
         )
         for index, (key, caption, question, color) in enumerate(layout):
             tile = Tile(caption, question, color)
@@ -184,7 +194,13 @@ class TouchPanel(QWidget):
 
     def ask(self, question: str) -> str:
         result, _ = self.source()
-        self.last_answer = answer(question, result).text
+        counter = self.energy()
+        if question == ENERGY_QUESTION and counter is not None:
+            self.last_answer = (f"A energia ativa acumulada é {_si(counter.active_wh, 'Wh')}"
+                                .replace("kWh", "quilowatts-hora").replace("MWh", "megawatts-hora")
+                                .replace(" Wh", " watts-hora") + ".")
+        else:
+            self.last_answer = answer(question, result).text
         self.answer_label.setText(self.last_answer)
         if self.voice_button.isChecked():
             self.speaker(self.last_answer)
@@ -233,7 +249,8 @@ class TouchPanel(QWidget):
     # --- atualização --------------------------------------------------------
     def refresh(self) -> None:
         result, mode = self.source()
-        self.mode_label.setText(mode)
+        self.mode_label.setText(mode.split(" — ")[0].capitalize())
+        self.mode_label.setToolTip(mode)
         if result is None:
             for tile in self.tiles.values():
                 tile.set_value("---", "aguardando sinal")
@@ -245,14 +262,18 @@ class TouchPanel(QWidget):
             self.tiles[f"i{phase}"].set_value("---" if current is None else f"{current:.2f} A".replace(".", ","),
                                          "" if current is not None else "sem correntes")
         self.tiles["freq"].set_value(f"{result.frequency_hz:.2f} Hz".replace(".", ","))
-        if result.power:
-            total = sum(p.active_w for p in result.power.values())
-            self.tiles["power"].set_value(_si(total, "W"))
-            pf = result.power["A"].power_factor
-            self.tiles["pf"].set_value("---" if pf is None else f"{pf:.3f}".replace(".", ","))
+        total = totals(result)
+        counter = self.energy()
+        if total is not None:
+            self.tiles["power"].set_value(_si(total.active_w, "W"), f"aparente {_si(total.apparent_va, 'VA')}")
+            pf = total.power_factor
+            kind = "indutivo" if total.reactive_var > 1e-9 else "capacitivo" if total.reactive_var < -1e-9 else ""
+            self.tiles["pf"].set_value("---" if pf is None else f"{pf:.3f}".replace(".", ","), kind)
+            self.tiles["energy"].set_value("---" if counter is None else _si(counter.active_wh, "Wh"),
+                                           "" if counter is None else f"reativa {_si(counter.reactive_varh, 'varh')}")
         else:
-            self.tiles["power"].set_value("---", "sem correntes")
-            self.tiles["pf"].set_value("---", "sem correntes")
+            for key in ("power", "pf", "energy"):
+                self.tiles[key].set_value("---", "sem correntes")
         if result.thd_percent is None:
             self.tiles["thd"].set_value("---")
         else:
@@ -267,8 +288,6 @@ class TouchPanel(QWidget):
             over = unbalance > LIMIT_UNBALANCE_PERCENT
             self.tiles["unb"].set_value(f"{unbalance:.2f} %".replace(".", ","),
                                    f"acima de {LIMIT_UNBALANCE_PERCENT:.0f} % (PRODIST)" if over else "", warn=over)
-        self.tiles["seq"].set_value(seq.rotation or "---", {"ABC": "direta", "ACB": "inversa"}.get(seq.rotation or "", ""),
-                               warn=seq.rotation == "ACB")
         found = alerts(result)
         self.alert_label.setText("⚠  " + "   ·   ".join(found))
         self.alert_label.setVisible(bool(found))
@@ -288,6 +307,9 @@ class TouchPanel(QWidget):
 
 
 def _si(value: float, unit: str) -> str:
+    """Valor com prefixo k/M e vírgula decimal."""
+    if abs(value) >= 1e6:
+        return f"{value / 1e6:.2f} M{unit}".replace(".", ",")
     if abs(value) >= 1000:
         return f"{value / 1000:.2f} k{unit}".replace(".", ",")
-    return f"{value:.0f} {unit}"
+    return f"{value:.0f} {unit}" if abs(value) >= 10 or value == 0 else f"{value:.2f} {unit}".replace(".", ",")
