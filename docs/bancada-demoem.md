@@ -13,6 +13,30 @@ A placa DEMOEM/MCF51EM256 foi testada fisicamente em 14/11/2026. O firmware foi 
 Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","message":"PRISMA SCI3 OK"}`. A versão ADC foi validada com `adc_timeout_mask: 0`: DADP0 e DADP2 variaram, enquanto DADP1 permaneceu em zero na configuração testada. Os valores ainda são palavras brutas, sem calibração ou unidade física.
 
 
+## Teste com USB único (gravação + telemetria pela PEmicro) — pendente
+
+Objetivo: dispensar o CH340 usando a serial virtual do Embedded Multilink da própria DEMOEM. O diagnóstico de 13/11/2026 mostrou a interface `VID_1357&PID_0504&MI_01` ("USB and Serial Interface") **sem porta COM** (`serial_ports: []`). O manual cita o Terminal Window Utility do "P&E Embedded Multilink Toolkit" com opção "virtual USB COM"; não está confirmado que o Windows crie uma COM padrão acessível ao pyserial.
+
+1. Desligar a placa. Desconectar o CH340 do J6.
+2. Configurar os headers de 3 pinos conforme o DEMOEM User Manual v1.02, seções 7.2–7.3 (figuras 7-4 a 7-7). A serigrafia "PBE" é "P&E":
+   - **J7 (TX_EN):** jumper entre o pino **P&E_RX** e o pino **central**. O pino da outra ponta ("TX") fica livre.
+   - **J8 (RX_EN):** jumper entre o pino **P&E_TX** e o pino **central**. O pino "RX" fica livre.
+   - **J9 (TX_SEL):** jumper entre o **central** e **PTC1** (SCI3, padrão).
+   - **J10 (RX_SEL):** jumper entre o **central** e **PTC0** (SCI3, padrão).
+   - Sem jumper em J7/J8 a serial virtual fica desabilitada (configuração usada com o CH340).
+3. Ligar somente o USB tipo B da DEMOEM.
+4. Instalar/atualizar os PEmicro Windows USB Drivers oficiais e rodar novamente `scripts\diagnostico_windows.ps1`.
+5. Verificar se surgiu uma COM associada a `VID_1357`. Se não surgir, testar o P&E Terminal Utility a 19200 8N1; registrar o resultado e encerrar aqui (o PRISMA via pyserial exige COM).
+6. Gravar o firmware pelo HI-WAVE e **fechar a sessão de depuração** (BDM e serial podem não operar simultaneamente).
+7. No PRISMA, carregar `examples/profiles/demoem-pemicro.json`, selecionar a COM da PEmicro e conectar.
+8. Critério de aceite: receber `PRISMA SCI3 OK` e telemetria ADC equivalente ao teste com CH340; depois regravar sem desconectar o cabo e confirmar que a COM volta a funcionar.
+
+| Item | Resultado |
+| --- | --- |
+| COM criada pelo driver PEmicro | Pendente |
+| Telemetria recebida no PRISMA | Pendente |
+| Regravar e reconectar sem trocar cabo | Pendente |
+
 > Para o detalhamento de alimentação, entradas de sensores, SCI/UART, ligação da tela touch, bateria recarregável e gateway IoT, veja o [guia de ligações da DEMOEM](ligacoes-hardware-demoem.md). Ele distingue recursos confirmados da placa de integrações propostas.
 
 ## 1. Identificar a bancada

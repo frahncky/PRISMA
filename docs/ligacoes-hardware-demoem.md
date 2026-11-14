@@ -100,10 +100,10 @@ O manual da DEMOEM confirma:
 | SCI3 | **J6** | **Preferência proposta** para telemetria, conforme disponibilidade física |
 | Escolha da SCI TX | **J9 — TX_SEL** | Manual indica configuração padrão para SCI3 |
 | Escolha da SCI RX | **J10 — RX_SEL** | Manual indica configuração padrão para SCI3 |
-| Conexão ao receptor virtual P&E | **J7 — TX_EN** | Une TX do MCU à interface virtual; conferir sentido e posição na figura 7-4 |
-| Conexão ao transmissor virtual P&E | **J8 — RX_EN** | Une TX da P&E ao RX do MCU; conferir a figura 7-5 |
+| Conexão ao receptor virtual P&E | **J7 — TX_EN** | Header de 3 pinos: jumper P&E_RX ↔ central habilita (manual v1.02, fig. 7-4) |
+| Conexão ao transmissor virtual P&E | **J8 — RX_EN** | Header de 3 pinos: jumper P&E_TX ↔ central habilita (manual v1.02, fig. 7-5) |
 
-**Opção A — demonstração/PC:** manter a interface P&E como único interlocutor da SCI, configurar `J9/J10` para o par escolhido e habilitar `J7/J8` segundo o manual; no Windows, identificar COM; no PRISMA, usar **115200 8N1** e firmware compatível.
+**Opção A — demonstração/PC:** manter a interface P&E como único interlocutor da SCI, configurar `J9/J10` para o par escolhido e habilitar `J7/J8` segundo o manual; no Windows, identificar COM; no PRISMA, usar a taxa do firmware gravado (**19200 8N1** no firmware atual).
 
 **Opção B — ESP32-S3 e IoT (proposta):**
 
