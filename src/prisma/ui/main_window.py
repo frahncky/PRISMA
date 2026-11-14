@@ -106,6 +106,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             ("Pausar / retomar gráficos", self.toggle_pause, "Space"),
             ("Exportar imagem dos instrumentos…", self.export_snapshot, "Ctrl+Shift+S"),
             ("Tela cheia", self.toggle_fullscreen, "F11"),
+            ("Painel touch", self.open_touch_panel, "F10"),
         ):
             action = QAction(name, self)
             action.setShortcut(QKeySequence(keys))
@@ -882,6 +883,22 @@ class MainWindow(FeaturesMixin, QMainWindow):
             button.setChecked(widget is current)
             if widget is current and hasattr(self, "page_title"):
                 self.page_title.setText(button.property("title"))
+
+    def open_touch_panel(self, fullscreen: bool = True):
+        """Abre o painel touch (valores grandes e perguntas faladas) sobre a medição atual."""
+        from prisma.ui.touch_panel import TouchPanel
+        panel = getattr(self, "touch_panel", None)
+        if panel is None or not panel.isVisible():
+            panel = TouchPanel(lambda: (self.last_analysis[0] if self.last_analysis else None, self.mode), self)
+            panel.setWindowIcon(self.windowIcon())
+            self.touch_panel = panel
+        if self.screen() is not None:
+            panel.setScreen(self.screen())
+            panel.move(self.screen().geometry().topLeft())
+        panel.showFullScreen() if fullscreen else panel.show()
+        panel.raise_()
+        panel.activateWindow()
+        return panel
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused

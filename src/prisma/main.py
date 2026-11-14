@@ -4,6 +4,7 @@ Exemplos:
     python -m prisma
     python -m prisma --port COM4 --profile examples/profiles/demoem-ch340.json --connect
     python -m prisma --last --screen 2
+    python -m prisma --painel            # painel touch em tela cheia
 """
 import argparse
 import sys
@@ -21,6 +22,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--connect", action="store_true", help="conectar à serial ao abrir")
     parser.add_argument("--last", action="store_true", help="reusar a última porta e o último perfil e conectar")
     parser.add_argument("--screen", type=int, help="monitor onde abrir (1 = principal)")
+    parser.add_argument("--painel", action="store_true", help="abrir o painel touch em tela cheia")
     return parser.parse_args(argv)
 
 
@@ -57,6 +59,8 @@ def main(argv: list[str] | None = None) -> None:
     window.showMaximized()
     if port and (args.connect or args.last):
         window.connect_serial()
+    if args.painel:
+        window.open_touch_panel()
     code = app.exec()
     current = window.screen()
     if current in screens:
