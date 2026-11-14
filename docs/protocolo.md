@@ -1,6 +1,6 @@
 # Protocolo de telemetria PRISMA v1
 
-A comunicação serial usa uma mensagem JSON UTF-8 por linha, padrão genérico 115200 baud, 8N1. O perfil `examples/profiles/demoem-ch340.json`, validado na DEMOEM, usa 19200 baud, 8N1.
+A comunicação serial usa uma mensagem JSON UTF-8 por linha, padrão genérico 115200 baud, 8N1. O perfil `examples/profiles/demoem-ch340.json`, validado na DEMOEM, usa 115200 baud, 8N1 (firmware em rajada; até 14/11/2026 era 19200).
 
 Exemplo de mensagem:
 {"type":"sample","t":0.001,"va":110.2,"vb":-92.1,"vc":-18.3}

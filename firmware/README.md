@@ -12,7 +12,7 @@ Este diretório contém um encoder JSON em C99, uma aplicação usando HAL, um s
 | `src/main.c` | Loop de aquisição e envio, com mensagem de estados a cada 1000 amostras. |
 | `ports/host_simulator.c` | Sinais sintéticos no computador, sem acesso a hardware. |
 | `ports/mcf51em256_port.example.c` | Port pendente, bloqueado por `#error` até configurar o hardware real. |
-| `codewarrior/EM256 Demo/Sources/main.c` | Firmware de bancada validado: SCI3 a 19200 8N1 e leitura ADC diferencial bruta. |
+| `codewarrior/EM256 Demo/Sources/main.c` | Firmware de bancada validado: rajadas de 500 amostras AD4/AD5/AD6 a ~1995 Hz (MTIM1), SCI3 a 115200 8N1 (`PRISMA_SCI_BAUD`) e trim do oscilador em 0x3FE/0x3FF. |
 | `codewarrior/EM256 Demo/cmd/prisma_flash_and_run.cmd` | Comandos HI-WAVE para carregar, verificar e executar a imagem. |
 
 ## Compilar e testar no computador

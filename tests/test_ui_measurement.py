@@ -274,7 +274,7 @@ def test_perfil_e_porta_sao_memorizados(window, tmp_path):
     profile = Path(__file__).resolve().parents[1] / "examples/profiles/demoem-ch340.json"
     window.apply_profile(profile)
     assert window.settings.value("last_profile") == str(profile)
-    assert "19200" in window.profile_label.text()
+    assert "115200" in window.profile_label.text()
     assert not window.select_port("COM_INEXISTENTE")
     args = parse_args(["--port", "COM4", "--profile", str(profile), "--connect", "--screen", "2"])
     assert (args.port, args.connect, args.screen) == ("COM4", True, 2)

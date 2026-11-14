@@ -45,6 +45,14 @@ py -m venv .venv
 
 Requer **Windows 11** e **Python 3.11+**. O app abre direto em demonstração: 2400 amostras/s, três fases de 127 V RMS a 60 Hz e 2,5 % de 3ª harmônica na fase A.
 
+Com a placa:
+
+```powershell
+.\.venv\Scripts\python.exe -m prisma --port COM4 --profile examples\profiles\demoem-ch340.json --connect
+.\.venv\Scripts\python.exe -m prisma --last          # reusa a última porta, perfil e monitor
+.\scripts\criar_atalho.ps1                             # atalho "PRISMA" na área de trabalho
+```
+
 ## ✨ Recursos
 
 <table>
@@ -91,7 +99,7 @@ Requer **Windows 11** e **Python 3.11+**. O app abre direto em demonstração: 2
 flowchart LR
     S["Sensores isolados<br/>tensão e corrente"] --> A["Condicionamento<br/>e filtros"]
     A --> B["DEMOEM<br/>ColdFire MCF51EM256"]
-    B -->|"SCI3 · JSON · 19200 8N1"| P["🖥️ PRISMA desktop"]
+    B -->|"SCI3 · rajadas JSON · 115200 8N1"| P["🖥️ PRISMA desktop"]
     B -.->|"UART"| G["Gateway ESP32-S3<br/>(protótipo)"]
     G -.->|"USB CDC"| P
     G -.->|"Wi-Fi · MQTT/TLS"| I["☁️ IoT"]
@@ -107,7 +115,7 @@ flowchart LR
 | **Placa** | DEMOEM com MCF51EM256 (ColdFire V1) |
 | **Gravação** | CodeWarrior 6.3.2 + PEmicro Embedded Multilink (HI-WAVE) |
 | **Telemetria** | `J6 PTC1/TX3 → CH340 RXD` + GND, J7/J8 sem jumper, perfil [`demoem-ch340.json`](examples/profiles/demoem-ch340.json) |
-| **Formato** | Uma mensagem JSON UTF-8 por linha, 19200 8N1 |
+| **Formato** | Rajadas de 500 amostras × 3 canais a ~1995 Hz, uma linha JSON por bloco, 115200 8N1 (~1,2 blocos/s) |
 
 ```json
 {"type":"sample","t":0.001,"va":110.2,"vb":-92.1,"vc":-18.3}
@@ -125,9 +133,9 @@ Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [roteiro de ba
 | Interface, instrumentos e editor em demonstração | ✅ Pronto |
 | Análise: frequência, janelas, harmônicas, potência, calibração | ✅ Pronto em software |
 | Histórico CSV / SQLite e relatórios | ✅ Pronto |
-| Leitura serial JSON na DEMOEM (CH340, 19200 8N1) | ✅ Validada em bancada |
-| Build e gravação ColdFire (CodeWarrior + HI-WAVE) | ✅ Validados |
-| Firmware ColdFire: SCI3 e ADC bruto | ✅ Validados · 🧪 autocalibração do ADC compilada, teste em placa pendente |
+| Aquisição em rajada AD4/AD5/AD6 na DEMOEM (CH340, 115200 8N1) | ✅ Validada em bancada: trifásico a 120°, sem perda de blocos |
+| Build e gravação ColdFire (CodeWarrior + HI-WAVE) | ✅ Automatizados: `scripts/gravar_demoem.ps1 -Build` |
+| Firmware ColdFire: rajada com timer, trim do oscilador gravado | ✅ Validados · autocalibração do ADC desativada |
 | Telemetria por um único USB (serial virtual PEmicro) | ⏳ Driver atual não cria porta COM |
 | Depuração ColdFire pelo PRISMA (GDB) | ⏳ Sem GDB ColdFire V1 na instalação; depuração via HI-WAVE |
 | Medição calibrada e homologação física | ⏳ Pendente |

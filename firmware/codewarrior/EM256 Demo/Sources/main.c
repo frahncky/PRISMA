@@ -3,7 +3,7 @@
 
 /* PRISMA serial and raw ADC diagnostic for DEMOEM / MCF51EM256.
  * J6 PTC1/TX3 -> CH340 RXD; connect the grounds. RX is not required.
- * Terminal: 19200 baud, 8 data bits, no parity, 1 stop bit.
+ * Terminal: PRISMA_SCI_BAUD (default 115200), 8 data bits, no parity, 1 stop bit.
  * J38 connects the QE8 filtered PWM signals to the EM256 ADC inputs.
  */
 
@@ -22,7 +22,12 @@
 const byte prisma_nv_ftrim @0x000003FE = PRISMA_ICS_FTRIM;
 const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 
-#define SCI3_SBR_19200_AT_19MHZ 65U
+#ifndef PRISMA_SCI_BAUD
+#define PRISMA_SCI_BAUD 115200UL
+#endif
+#define PRISMA_BUS_HZ 19922944UL                 /* 32.768 kHz x 1216 / 2 (FEI, trimmed). */
+/* SBR = bus / (16 x baud), rounded: 19200 -> 65 (-0.2 %), 115200 -> 11 (-1.7 %). */
+#define SCI3_SBR ((byte)((PRISMA_BUS_HZ / 16UL + PRISMA_SCI_BAUD / 2UL) / PRISMA_SCI_BAUD))
 #define ADC_WAIT_LIMIT 2000UL
 
 static byte adc_timeout;
@@ -58,7 +63,7 @@ static void SCI3_Init(void)
   PTCPF2 = (byte)((PTCPF2 & 0xF0U) | 0x0FU);
   SCI3C2 = 0x00;
   SCI3BDH = 0x00;
-  SCI3BDL = SCI3_SBR_19200_AT_19MHZ;
+  SCI3BDL = SCI3_SBR;
   SCI3C1 = 0x00;
   SCI3C3 = 0x00;                         /* Normal TTL transmit polarity. */
   SCI3C2 = 0x0C;                         /* Enable transmitter and receiver. */

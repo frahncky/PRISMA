@@ -2,5 +2,5 @@
   "version": 1,
   "name": "DEMOEM MCF51EM256 via CH340",
   "protocol": "prisma-json-v1",
-  "baudrate": 19200
+  "baudrate": 115200
 }

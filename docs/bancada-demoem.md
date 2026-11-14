@@ -127,3 +127,11 @@ Para analisar h15 de 60 Hz, a amostragem deve superar 1800 amostras/s. A taxa de
 - [ ] Relatório local com data, versões, comandos, hashes, resultados e limitações.
 
 Somente após anexar essas evidências devem ser encerradas as pendências físicas do roadmap. Não guardar licenças, credenciais, firmwares proprietários ou números de série em um repositório público.
+
+### Serial a 115200 baud (14/11/2026)
+
+`PRISMA_SCI_BAUD = 115200` (SBR 11, −1,74 % de erro de divisão com o barramento nominal). Em 20 s chegaram 24 rajadas válidas, nenhuma inválida e sem saltos de `seq`: ~1,2 blocos/s, seis vezes a taxa a 19200. Se a placa passar a ter erros de enquadramento, recalibrar o trim (`scripts/calibrar_trim_demoem.py`) ou voltar para 19200 recompilando com `PRISMA_SCI_BAUD=19200UL` e ajustando o perfil.
+
+### Potenciômetros do QE8 (14/11/2026)
+
+Gravação de 60 s girando os três potenciômetros: fora da transição, RMS e frequência quase não mudam (12–13,5 mil contagens, ~51,9 Hz). Em um ponto do giro o QE8 cortou AD4 e AD5 por ~6 s (dois blocos) e AD6 ficou com 1 a 2 pulsos. O PRISMA passou a mostrar “Sem sinal” e o RMS por fase nesses blocos, e a estimar a frequência pelo canal com mais sinal. A função exata de cada potenciômetro no programa de fábrica do QE8 não está documentada.

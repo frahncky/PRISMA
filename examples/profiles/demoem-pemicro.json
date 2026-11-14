@@ -2,5 +2,5 @@
   "version": 1,
   "name": "DEMOEM MCF51EM256 via serial virtual PEmicro (USB único)",
   "protocol": "prisma-json-v1",
-  "baudrate": 19200
+  "baudrate": 115200
 }

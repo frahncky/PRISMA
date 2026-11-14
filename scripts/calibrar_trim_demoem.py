@@ -16,7 +16,7 @@ import serial
 
 ROOT = Path(__file__).resolve().parents[1]
 MAIN_C = ROOT / "firmware/codewarrior/EM256 Demo/Sources/main.c"
-NOMINAL = 19200
+NOMINAL = 115200  # deve coincidir com PRISMA_SCI_BAUD do firmware
 HEX = set(b"0123456789ABCDEF")
 
 
@@ -48,9 +48,10 @@ def readable(port: str, baud: int, seconds: float = 1.2) -> float:
 def measure(port: str) -> float:
     """Centro da janela de baud com dados hexadecimais legíveis."""
     time.sleep(1.0)
-    good = [b for b in range(15000, 24001, 300) if readable(port, b, 0.4) > 0.9]
+    step = NOMINAL // 64
+    good = [b for b in range(int(NOMINAL * 0.8), int(NOMINAL * 1.2) + 1, step) if readable(port, b, 0.4) > 0.9]
     if not good:
-        raise RuntimeError("Nenhum baud legível entre 15000 e 24000")
+        raise RuntimeError("Nenhum baud legível em ±20 % do nominal")
     return (min(good) + max(good)) / 2
 
 
