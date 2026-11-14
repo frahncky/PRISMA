@@ -55,3 +55,29 @@ O firmware em rajada envia uma linha por bloco:
 - `data`: `n × 3` palavras de 16 bits em hexadecimal maiúsculo, 4 dígitos cada, intercaladas por amostra (`ch[0] ch[1] ch[2]`, próxima amostra...).
 - Os três ADCs convertem juntos a cada tique do timer; os valores são contagens brutas, mapeadas para `va`, `vb` e `vc`.
 - O PRISMA posiciona cada bloco em `t = seq × 10 s + i / fs`, de modo que a análise use um bloco por vez. Um `seq` menor que o anterior (reinício do firmware) limpa o buffer.
+
+## Protocolo binário v2 (rajada com CRC)
+
+Convive com o JSON na mesma serial: o leitor separa linhas de texto e quadros que começam com `A5 5A` (o firmware deve emitir JSON só em ASCII: texto UTF-8 como `¥Z` contém `A5 5A` e seria confundido com um quadro). Encoder C em `firmware/include/prisma_frame.h` e `firmware/src/prisma_frame.c`; decodificador em `prisma.core.protocol.StreamDecoder`.
+
+| Campo | Tipo | Observação |
+| --- | --- | --- |
+| sincronismo | `A5 5A` | |
+| tipo | u8 | `0x01` = rajada |
+| len | u16 LE | bytes do payload |
+| payload | len bytes | |
+| CRC | u16 LE | CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) sobre tipo, len e payload |
+
+Payload da rajada: `seq` u32, `fs_mhz` u32, `n` u16 (2..4096), máscara u8 (`0x07` = va/vb/vc; `0x3F` = va..ic), flags u8 (bits 0–2: timeout ADC1..3; bit 7: valores int16 com sinal), depois `n × k` palavras u16 LE intercaladas por amostra.
+
+Um quadro com CRC inválido é descartado inteiro (pelo comprimento declarado) e contado. Cabeçalho inválido descarta até a próxima linha ou sincronismo.
+
+**Vazão a 115200 8N1 (≈ 11 520 B/s úteis):** cada amostra trifásica ocupa 6 bytes contra 12 do JSON hex. Isso dá ≈ 1 900 amostras/s com 3 canais ou ≈ 950 amostras/s com 6 canais, contínuos e sem folga. Para h15 a 60 Hz (Nyquist acima de 900 Hz, ou seja, mais de 1 800 amostras/s) com 6 canais, é preciso continuar em rajadas com pausa ou subir o baud (por exemplo, 460800).
+
+### Calibração de fase
+
+Cada canal do perfil de calibração aceita `delay_us` opcional, além de `gain` e `offset`. Um valor positivo indica que o canal chega atrasado (TC, filtro ou conversão sequencial). O app compensa por interpolação antes da análise. `delays_from_resistive_load` calcula o atraso das correntes a partir de uma carga resistiva (FP = 1).
+
+```json
+{"version": 1, "name": "Bancada", "channels": {"ia": {"gain": 0.0123, "offset": 0.0, "delay_us": 180.0}}}
+```

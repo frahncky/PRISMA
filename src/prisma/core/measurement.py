@@ -30,6 +30,7 @@ class Measurement:
     power: dict[str, Power] = field(default_factory=dict)
     window: str = "rectangular"
     crest: dict[str, float | None] = field(default_factory=dict)
+    current_phasors: dict[str, complex] = field(default_factory=dict)
 
 
 class SignalBuffer:
@@ -166,7 +167,8 @@ def analyze(t: np.ndarray, values: np.ndarray, fundamental_hz: float | None = 60
                                  apparent, float(np.clip(active[i] / apparent, -1, 1)) if apparent > 1e-12 else None)
     return Measurement(dict(zip(PHASES, map(float, rms))), dict(zip(PHASES, map(complex, ph[:3]))),
                        percentages, float(fundamental_hz), thd, current_rms, power, window,
-                       dict(zip(PHASES, crest_factors(values))))
+                       dict(zip(PHASES, crest_factors(values))),
+                       dict(zip(PHASES, map(complex, ph[3:]))) if currents is not None else {})
 
 
 @dataclass(frozen=True)

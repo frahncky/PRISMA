@@ -1,7 +1,7 @@
 """Thread isolada para telemetria serial: não modifica firmware."""
 import threading
 from PySide6.QtCore import QThread, Signal
-from .protocol import HardwareStatus, Sample, SampleBlock, parse_message
+from .protocol import HardwareStatus, Sample, SampleBlock, StreamDecoder, parse_message
 
 class SerialReader(QThread):
     connected = Signal()
@@ -28,42 +28,27 @@ class SerialReader(QThread):
                 self.connected.emit()
                 self.message.emit(f"Porta {self.port} aberta a {self.baudrate} baud (somente leitura).")
                 invalid_count = 0
-                pending = bytearray()
-                discarding = False
+                decoder = StreamDecoder(self.parser)
                 while not self._stop.is_set():
                     chunk = handle.read(max(1, min(handle.in_waiting, 4096)))
                     if not chunk:
                         continue
-                    for byte in chunk:
-                        if byte == 10:
-                            if discarding:
-                                discarding = False
-                                continue
-                            line = bytes(pending)
-                            pending.clear()
-                            try:
-                                sample = self.parser(line)
-                                if not isinstance(sample, (Sample, HardwareStatus, SampleBlock)):
-                                    raise ValueError("Plugin retornou um tipo de mensagem inválido")
-                            except (ValueError, UnicodeDecodeError, KeyError) as exc:
-                                invalid_count += 1
-                                if invalid_count <= 5:
-                                    self.message.emit(f"Linha ignorada: {exc}")
-                                continue
-                            if isinstance(sample, Sample):
-                                self.sample_received.emit(sample)
-                            elif isinstance(sample, SampleBlock):
-                                self.block_received.emit(sample)
-                            else:
-                                self.status_received.emit(sample)
-                        elif not discarding:
-                            pending.append(byte)
-                            if len(pending) > 16384:
-                                pending.clear()
-                                discarding = True
-                                invalid_count += 1
-                                if invalid_count <= 5:
-                                    self.message.emit("Linha ignorada: excede 16384 bytes")
+                    for item in decoder.feed(chunk):
+                        if isinstance(item, Exception):
+                            invalid_count += 1
+                            if invalid_count <= 5:
+                                text = str(item)
+                                self.message.emit(text if text.startswith("Linha ignorada") else f"Linha ignorada: {text}")
+                        elif isinstance(item, Sample):
+                            self.sample_received.emit(item)
+                        elif isinstance(item, SampleBlock):
+                            self.block_received.emit(item)
+                        elif isinstance(item, HardwareStatus):
+                            self.status_received.emit(item)
+                        else:
+                            invalid_count += 1
+                            if invalid_count <= 5:
+                                self.message.emit("Linha ignorada: Plugin retornou um tipo de mensagem inválido")
         except Exception as exc:
             self.message.emit(f"Erro de comunicação em {self.port}: {exc}")
         finally:

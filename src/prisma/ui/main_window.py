@@ -578,7 +578,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if self._session_t0 is None:
             self._session_t0 = arrival
         n = len(block.samples)
-        transmission = (n * 12 + 150) * 10 / max(1, self.device_profile.baudrate)
+        wire = block.wire_bytes if getattr(block, "wire_bytes", None) else n * 12 + 150
+        transmission = wire * 10 / max(1, self.device_profile.baudrate)
         start = arrival - self._session_t0 - transmission - n / block.fs_hz
         start = max(start, self._last_record_t + 1 / block.fs_hz)
         times = [start + i / block.fs_hz for i in range(n)]
@@ -618,7 +619,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         starts = self._block_record_times(block)
         for sample, record_t in zip(block.samples, starts):
             if scale is not None:
-                sample = Sample(sample.t, sample.va * scale, sample.vb * scale, sample.vc * scale)
+                currents = (sample.ia, sample.ib, sample.ic)
+                sample = Sample(sample.t, sample.va * scale, sample.vb * scale, sample.vc * scale,
+                                *(None if c is None else c * scale for c in currents))
             self._on_sample(sample, record_t)
         names = "/".join(block.channels)
         warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
@@ -717,7 +720,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         try:
             frequency = (60.0, 50.0, None)[self.frequency_combo.currentIndex()]
             window = ("rectangular", "hann")[self.window_combo.currentIndex()]
-            result = analyze(t, values, fundamental_hz=frequency, currents=self.buffer.currents(), window=window)
+            values, currents = self.calibration.align(t, values, self.buffer.currents())
+            result = analyze(t, values, fundamental_hz=frequency, currents=currents, window=window)
         except ValueError as exc:
             self.last_analysis = None
             self.frequency_label.setText("—")
