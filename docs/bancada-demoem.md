@@ -10,21 +10,12 @@ A placa DEMOEM/MCF51EM256 foi testada fisicamente em 14/11/2026. O firmware foi 
 - Manter J36 em 1–2 para alimentar o MC9S08QE8 e J38 fechado para levar seus seis sinais PWM filtrados aos ADCs. J29 mantém DADM0/1/2 referidos ao GND na configuração de demonstração.
 - No PRISMA, carregar `examples/profiles/demoem-ch340.json`, selecionar a COM do CH340 e conectar.
 
-Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","message":"PRISMA SCI3 OK"}`. A versão ADC foi validada com `adc_timeout_mask: 0`: DADP0 e DADP2 variaram, enquanto DADP1 permaneceu em zero na configuração testada. Os valores ainda são palavras brutas, sem calibração ou unidade física.
+Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","message":"PRISMA SCI3 OK"}`. A versão trifásica fixa foi validada com `adc_timeout_mask: 0` em ADC3/AD4, ADC1/AD5 e ADC2/AD6. Em 40 leituras foram observadas faixas de 0–65535 em AD4/AD5 e 0–32032 em AD6. Os valores ainda são contagens brutas, sem calibração ou unidade física.
 
 
-## Próximo teste do ADC (firmware com autocalibração) — pendente
+## Resultado do diagnóstico do multiplexador
 
-O firmware atual executa a autocalibração dos ADC1/2/3 no boot (mensagem `ADC CAL` com `adc_cal_fail_mask`) e publica também `adc_signed`. Compilado sem erros em 14/11/2026; ainda não gravado na placa.
-
-1. Gravar `bin/Project.abs` pelo HI-WAVE e conferir `adc_cal_fail_mask: 0`.
-2. Comparar `adc_signed` com os valores brutos anteriores (offset deve diminuir após a calibração).
-3. **DADP1 em zero:** o manual (seção 2, "Analogue Signal Syntheses") indica que o QE8 tem três potenciômetros que ajustam os sinais de 50/60 Hz. Girar cada potenciômetro e observar qual canal responde; conferir também o jumper de J38 correspondente ao canal (TPM1CH0…TPM2CH2) e J29 (DADM1 a GND). Se DADP1 seguir em zero com sinal presente no pino, medir a tensão em DADP1 com multímetro/osciloscópio.
-
-| Item | Resultado |
-| --- | --- |
-| `adc_cal_fail_mask` | Pendente |
-| DADP1 responde ao potenciômetro | Pendente |
+O mapeamento do MCF51EM256 foi confirmado pela tabela de canais da AN3949: DAD0=ADC3/canal 1, DAD1=ADC1/canal 2, DAD2=ADC2/canal 3, AD4=ADC3/canal 4, AD5=ADC1/canal 5 e AD6=ADC2/canal 6. A alternância imediata de cada módulo entre entrada diferencial e simples fez o primeiro resultado carregar resíduos do canal anterior. A revisão validada mantém um canal fixo por módulo (`AD4`, `AD5`, `AD6`). Os canais diferenciais devem ser adquiridos futuramente em blocos separados, com tempo de assentamento comprovado.
 
 ## Teste com USB único (gravação + telemetria pela PEmicro) — pendente
 

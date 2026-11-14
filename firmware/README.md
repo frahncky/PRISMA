@@ -34,7 +34,7 @@ O exemplo de projeto `examples/projects/host-gcc.json` permite compilar pela int
 
 O projeto foi validado com CodeWarrior for Microcontrollers 6.3.2, suporte ColdFire V1 e PEmicro/HI-WAVE. O linker limita a imagem à faixa aceita pela licença Special Edition. Artefatos de `bin/`, dados locais da IDE e executáveis proprietários não são versionados.
 
-A SCI3 usa PTC1/TX3 no J6 ligado ao RXD do CH340 e GND comum, sem ligar VCC. O perfil do aplicativo é `examples/profiles/demoem-ch340.json`. A leitura atual publica `dadp0_raw`, `dadp1_raw` e `dadp2_raw` como estado ADC; são contagens não calibradas e não constituem medição elétrica em unidade física.
+A SCI3 usa PTC1/TX3 no J6 ligado ao RXD do CH340 e GND comum, sem ligar VCC. O perfil do aplicativo é `examples/profiles/demoem-ch340.json`. A leitura validada fixa um módulo por sinal: ADC3/AD4, ADC1/AD5 e ADC2/AD6. Ela publica `ad4_raw`, `ad5_raw` e `ad6_raw`; são contagens não calibradas. Alternar imediatamente entradas simples e diferenciais produziu resíduos do multiplexador e não é usado nesta revisão.
 
 Para compilar, abra `EM256 Demo.mcp` e execute **Make**. Para gravar, abra a configuração PEmicro incluída no projeto, carregue `bin/Project.abs`, confirme **Connect/OK**, aguarde programar/verificar e use **Run/Go**. Depois da gravação, o cabo PEmicro pode ser removido; permanecem a alimentação da placa e o CH340.
 

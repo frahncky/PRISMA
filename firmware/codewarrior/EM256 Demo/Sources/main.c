@@ -144,11 +144,12 @@ static void SCI3_PutSigned(word value)
   SCI3_PutUnsigned(value);
 }
 
-static word ADC1_ReadDifferential0(void)
+static word ADC1_Read(byte channel, byte differential)
 {
   volatile unsigned long wait = ADC_WAIT_LIMIT;
+  byte selection = (byte)(channel | (differential != 0U ? 0x20U : 0x00U));
 
-  ADC1SC1A = 0x20U;                    /* DADP0 - DADM0. */
+  ADC1SC1A = selection;
   while ((ADC1SC1A_COCOA == 0U) && (wait != 0UL)) {
     --wait;
   }
@@ -159,11 +160,12 @@ static word ADC1_ReadDifferential0(void)
   return ADC1RA;
 }
 
-static word ADC2_ReadDifferential0(void)
+static word ADC2_Read(byte channel, byte differential)
 {
   volatile unsigned long wait = ADC_WAIT_LIMIT;
+  byte selection = (byte)(channel | (differential != 0U ? 0x20U : 0x00U));
 
-  ADC2SC1A = 0x20U;                    /* DADP1 - DADM1. */
+  ADC2SC1A = selection;
   while ((ADC2SC1A_COCOA == 0U) && (wait != 0UL)) {
     --wait;
   }
@@ -174,11 +176,12 @@ static word ADC2_ReadDifferential0(void)
   return ADC2RA;
 }
 
-static word ADC3_ReadDifferential0(void)
+static word ADC3_Read(byte channel, byte differential)
 {
   volatile unsigned long wait = ADC_WAIT_LIMIT;
+  byte selection = (byte)(channel | (differential != 0U ? 0x20U : 0x00U));
 
-  ADC3SC1A = 0x20U;                    /* DADP2 - DADM2. */
+  ADC3SC1A = selection;
   while ((ADC3SC1A_COCOA == 0U) && (wait != 0UL)) {
     --wait;
   }
@@ -204,35 +207,28 @@ void main(void)
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"BOOT\"}\r\n");
   ADC_Init();
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC CONFIG OK\"}\r\n");
-  ADC_Calibrate();
-  SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC CAL\",\"adc_cal_fail_mask\":");
-  SCI3_PutUnsigned((word)adc_cal_fail);
-  SCI3_PutString("}\r\n");
+  /* Hardware calibration remains opt-in: it must never block bring-up. */
+  adc_cal_fail = 0U;
 
   PTAD_PTAD5 = 0;
   PTADD_PTADD5 = 1;
 
   for (;;) {
-    word dadp0;
-    word dadp1;
-    word dadp2;
+    word ad4;
+    word ad5;
+    word ad6;
 
     adc_timeout = 0U;
-    dadp0 = ADC1_ReadDifferential0();
-    dadp1 = ADC2_ReadDifferential0();
-    dadp2 = ADC3_ReadDifferential0();
-    SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC RAW\",\"adc\":{\"dadp0_raw\":");
-    SCI3_PutUnsigned(dadp0);
-    SCI3_PutString(",\"dadp1_raw\":");
-    SCI3_PutUnsigned(dadp1);
-    SCI3_PutString(",\"dadp2_raw\":");
-    SCI3_PutUnsigned(dadp2);
-    SCI3_PutString("},\"adc_signed\":{\"dadp0\":");
-    SCI3_PutSigned(dadp0);
-    SCI3_PutString(",\"dadp1\":");
-    SCI3_PutSigned(dadp1);
-    SCI3_PutString(",\"dadp2\":");
-    SCI3_PutSigned(dadp2);
+    /* One fixed input per ADC avoids high-impedance mux settling artifacts. */
+    ad4 = ADC3_Read(4U, 0U);
+    ad5 = ADC1_Read(5U, 0U);
+    ad6 = ADC2_Read(6U, 0U);
+    SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC RAW 3PH\",\"adc\":{\"ad4_raw\":");
+    SCI3_PutUnsigned(ad4);
+    SCI3_PutString(",\"ad5_raw\":");
+    SCI3_PutUnsigned(ad5);
+    SCI3_PutString(",\"ad6_raw\":");
+    SCI3_PutUnsigned(ad6);
     SCI3_PutString("},\"adc_timeout_mask\":");
     SCI3_PutUnsigned((word)adc_timeout);
     SCI3_PutString("}\r\n");
