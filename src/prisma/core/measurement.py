@@ -162,3 +162,24 @@ def analyze(t: np.ndarray, values: np.ndarray, fundamental_hz: float | None = 60
                                  apparent, float(np.clip(active[i] / apparent, -1, 1)) if apparent > 1e-12 else None)
     return Measurement(dict(zip(PHASES, map(float, rms))), dict(zip(PHASES, map(complex, ph[:3]))),
                        percentages, float(fundamental_hz), thd, current_rms, power, window)
+
+
+@dataclass(frozen=True)
+class Sequence:
+    positive: float
+    negative: float
+    zero: float
+
+    @property
+    def unbalance_percent(self) -> float | None:
+        """Desequilíbrio de tensão (IEC 61000-4-30): |V2| / |V1| × 100."""
+        return 100 * self.negative / self.positive if self.positive > 1e-12 else None
+
+
+def sequence_components(phasors: dict[str, complex]) -> Sequence:
+    """Componentes simétricas (Fortescue) dos fasores das fases A, B e C."""
+    a = np.exp(2j * np.pi / 3)
+    va, vb, vc = (phasors[p] for p in PHASES)
+    return Sequence(float(abs(va + a * vb + a * a * vc) / 3),
+                    float(abs(va + a * a * vb + a * vc) / 3),
+                    float(abs(va + vb + vc) / 3))

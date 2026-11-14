@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import SignalBuffer, analyze
+from prisma.core.measurement import SignalBuffer, analyze, sequence_components
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
@@ -812,6 +812,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
             rows.append(("Potências", "sem correntes"))
         source = ("Demonstração (sintético)" if self.mode.startswith("DEMONSTRAÇÃO")
                   else "Pino do ADC (sem calibração)" if self._pin_volts() else "Porta serial")
+        seq = sequence_components(result.phasors)
+        if seq.unbalance_percent is not None:
+            rows.append(("Sequência +/−/0", f"{seq.positive:.3f} / {seq.negative:.3f} / {seq.zero:.3f} V"))
+            rows.append(("Desequilíbrio V2/V1", f"{seq.unbalance_percent:.1f} %"))
         rows.append(("THD fase A", thd_text))
         rows.append(("Origem", source))
         rows.append(("Calibração", self.calibration.name))

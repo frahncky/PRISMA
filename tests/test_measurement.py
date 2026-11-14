@@ -100,3 +100,15 @@ def test_frequencia_automatica_usa_canal_com_sinal_quando_fase_a_zera():
     assert abs(result.frequency_hz - 51.9) < 0.1
     assert result.rms["A"] == 0 and result.rms["C"] > 10000
     assert result.thd_percent is None
+
+
+def test_sequence_components_balanced_and_unbalanced():
+    import cmath
+    from prisma.core.measurement import sequence_components
+    a = cmath.rect(1, -2 * cmath.pi / 3)
+    seq = sequence_components({"A": 10, "B": 10 * a, "C": 10 * a * a})
+    assert abs(seq.positive - 10) < 1e-9 and seq.negative < 1e-9 and seq.zero < 1e-9
+    assert seq.unbalance_percent < 1e-9
+    seq = sequence_components({"A": 10, "B": 10 * a * a, "C": 10 * a})  # sequência invertida
+    assert seq.positive < 1e-9 and abs(seq.negative - 10) < 1e-9
+    assert sequence_components({"A": 0, "B": 0, "C": 0}).unbalance_percent is None

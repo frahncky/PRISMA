@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from .measurement import Measurement
+from .measurement import Measurement, sequence_components
 
 PHASE_COLORS = {"A": "#0f9fb8", "B": "#c98a12", "C": "#c0558a"}
 
@@ -43,6 +43,13 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
         f"<figure><img alt='{escape(title)}' src='data:image/png;base64,{base64.b64encode(png).decode()}'>"
         f"<figcaption>{escape(title)}</figcaption></figure>"
         for title, png in (images or {}).items())
+    seq = sequence_components(result.phasors) if set("ABC") <= set(result.phasors) else None
+    unbalance = (f"{seq.unbalance_percent:.2f} %" if seq and seq.unbalance_percent is not None
+                 else "indisponível")
+    seq_table = (f"<h2>Componentes simétricas</h2><table><tr><th>Positiva (V)</th><th>Negativa (V)</th>"
+                 f"<th>Zero (V)</th><th>Desequilíbrio V2/V1</th></tr><tr><td>{seq.positive:.3f}</td>"
+                 f"<td>{seq.negative:.3f}</td><td>{seq.zero:.3f}</td><td>{unbalance}</td></tr></table>"
+                 if seq else "")
     generated = datetime.now(timezone.utc).astimezone()
     document = f"""<!doctype html><html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -68,11 +75,13 @@ footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6e
 <div class="kpis">
 <div class="kpi"><span>Frequência</span><b>{result.frequency_hz:.3f} Hz</b></div>
 <div class="kpi"><span>THD fase A</span><b>{thd}</b><span>{harmonic_range.strip()}</span></div>
+<div class="kpi"><span>Desequilíbrio</span><b>{unbalance}</b></div>
 <div class="kpi"><span>Janelamento</span><b>{escape(result.window)}</b></div>
 </div>
 {figures}
 <h2>Tensões AC</h2>
 <table><tr><th>Fase</th><th>RMS (V)</th><th>Fundamental RMS (V)</th><th>Ângulo (ref. A)</th></tr>{rows}</table>
+{seq_table}
 <h2>Potências AC</h2><p class="muted">P e S incluem distorção; Q1 representa apenas a fundamental.</p>
 {power_table}
 <h2>Harmônicas da fase A</h2><table><tr><th>Ordem</th><th>% da fundamental</th></tr>{harmonic_rows}</table>
