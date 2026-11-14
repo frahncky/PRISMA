@@ -363,3 +363,14 @@ def test_relatorio_html_embute_graficos_e_angulos(window, tmp_path):
     html = target.read_text(encoding="utf-8")
     assert html.count("data:image/png;base64,") == 3
     assert "Ângulo (ref. A)" in html and "0.0°" in html and "-120.0°" in html
+
+
+def test_trend_records_and_clears(window):
+    from prisma.core.measurement import Measurement
+    result = Measurement({"A": 1.0, "B": 2.0, "C": 3.0}, {"A": 1, "B": 1, "C": 1}, [100.0], 60.0)
+    window.record_trend(result)
+    assert len(window.trend) == 1 and window.trend[0][1:5] == (1.0, 2.0, 3.0, 60.0)
+    window.record_trend(result)  # menos de 0,5 s depois: ignorado
+    assert len(window.trend) == 1
+    window.clear_trend()
+    assert not window.trend

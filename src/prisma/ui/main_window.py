@@ -839,6 +839,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             + "".join(f"<tr><td style='color:{theme.MUTED}'>{k}</td>"
                       f"<td align='right' style='color:{theme.TEXT}'>{v}</td></tr>" for k, v in rows)
             + f"</table><p style='color:{theme.SUBTLE}; font-size:10px'>Estimativas sem certificação metrológica.</p>")
+        self.record_trend(result)
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))

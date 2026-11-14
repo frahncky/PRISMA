@@ -1,5 +1,7 @@
 """Ferramentas de aquisição, análise, histórico e desenvolvimento."""
+from collections import deque
 from datetime import datetime
+import time
 import json
 from pathlib import Path
 import sqlite3
@@ -13,12 +15,16 @@ from PySide6.QtWidgets import (
 )
 
 from prisma.core.calibration import Calibration, delays_from_resistive_load, gains_from_reference
+import numpy as np
 import pyqtgraph as pg
 
 from prisma.ui import theme
+
+TREND_POINTS = 3600  # 30 min a 2 pontos/s
 from prisma.core.devices import DeviceProfile, load_protocol, serial_inventory
 from prisma.core.history import export_session, list_sessions
 from prisma.core.reports import write_report
+from prisma.core.measurement import sequence_components
 from prisma.core.toolchain import CommandRunner, DebugSession, Project, artifact_digest
 
 
@@ -126,6 +132,35 @@ class FeaturesMixin:
         note.setWordWrap(True)
         power_layout.addWidget(note)
         page.addWidget(power_card)
+
+        trend_card = QFrame()
+        trend_card.setObjectName("card")
+        trend_layout = QVBoxLayout(trend_card)
+        trend_layout.setContentsMargins(18, 14, 18, 16)
+        trend_head = QHBoxLayout()
+        trend_head.addWidget(self._section("TENDÊNCIA DA SESSÃO"))
+        trend_head.addStretch(1)
+        clear_trend = QPushButton("Limpar")
+        clear_trend.setObjectName("ghost")
+        clear_trend.clicked.connect(self.clear_trend)
+        trend_head.addWidget(clear_trend)
+        trend_layout.addLayout(trend_head)
+        trend_plots = QHBoxLayout()
+        self.trend_rms = self._plot("RMS por fase")
+        self.trend_rms.setLabel("bottom", "Tempo", units="s")
+        self.trend_curves = {phase: self.trend_rms.plot(pen=pg.mkPen(theme.PHASE[phase], width=2), name=phase)
+                             for phase in "ABC"}
+        self.trend_freq = self._plot("Frequência (Hz) e desequilíbrio (%)")
+        self.trend_freq.setLabel("bottom", "Tempo", units="s")
+        self.trend_freq_curve = self.trend_freq.plot(pen=pg.mkPen(theme.ACCENT, width=2))
+        self.trend_unb_curve = self.trend_freq.plot(pen=pg.mkPen(theme.WARNING, width=2, style=Qt.PenStyle.DashLine))
+        for plot in (self.trend_rms, self.trend_freq):
+            plot.setMinimumHeight(190)
+            trend_plots.addWidget(plot)
+        trend_layout.addLayout(trend_plots)
+        page.addWidget(trend_card)
+        self.trend = deque(maxlen=TREND_POINTS)
+        self._trend_t0 = None
         page.addStretch(1)
         self.tabs.addTab(analysis, "Análise")
 
@@ -733,3 +768,26 @@ class FeaturesMixin:
                 self.debugger.send(command)
         except ValueError as exc:
             QMessageBox.warning(self, "Depuração", str(exc))
+
+    def record_trend(self, result) -> None:
+        """Acrescenta um ponto ao histórico (no máximo um a cada 0,5 s)."""
+        now = time.monotonic()
+        if self._trend_t0 is None:
+            self._trend_t0 = now
+        t = now - self._trend_t0
+        if self.trend and t - self.trend[-1][0] < 0.5:
+            return
+        unbalance = sequence_components(result.phasors).unbalance_percent
+        self.trend.append((t, *(result.rms[p] for p in "ABC"), result.frequency_hz,
+                           float("nan") if unbalance is None else unbalance))
+        data = np.array(self.trend)
+        for i, phase in enumerate("ABC", 1):
+            self.trend_curves[phase].setData(data[:, 0], data[:, i])
+        self.trend_freq_curve.setData(data[:, 0], data[:, 4])
+        self.trend_unb_curve.setData(data[:, 0], data[:, 5], connect="finite")
+
+    def clear_trend(self) -> None:
+        self.trend.clear()
+        self._trend_t0 = None
+        for curve in (*self.trend_curves.values(), self.trend_freq_curve, self.trend_unb_curve):
+            curve.setData([], [])
