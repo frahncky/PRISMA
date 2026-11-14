@@ -135,3 +135,7 @@ Somente após anexar essas evidências devem ser encerradas as pendências físi
 ### Potenciômetros do QE8 (14/11/2026)
 
 Gravação de 60 s girando os três potenciômetros: fora da transição, RMS e frequência quase não mudam (12–13,5 mil contagens, ~51,9 Hz). Em um ponto do giro o QE8 cortou AD4 e AD5 por ~6 s (dois blocos) e AD6 ficou com 1 a 2 pulsos. O PRISMA passou a mostrar “Sem sinal” e o RMS por fase nesses blocos, e a estimar a frequência pelo canal com mais sinal. A função exata de cada potenciômetro no programa de fábrica do QE8 não está documentada.
+
+### Relógio da placa medido pelo PC (14/11/2026)
+
+O período entre rajadas depende só do relógio da DEMOEM (timer de amostragem e baud), então o cristal do PC serve de referência. Com TRIM 0xA7 o relógio estava **1,9 % lento** (807,3 ms medidos contra 791,9 ms nominais), o que deslocava a frequência estimada e somava −3,6 % de erro no baud. Com **TRIM 0xA0** ficou em **+0,02 a +0,04 %**. A frequência do gerador QE8 medida passou a ser **~51,1 Hz** (provável 50 Hz nominal com o oscilador do QE8 ~2 % rápido). `scripts/calibrar_trim_demoem.py` agora usa esse método (≈0,05 % de resolução) e corrige o TRIM sozinho.

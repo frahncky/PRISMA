@@ -14,7 +14,7 @@
  * Higher TRIM -> lower ICS frequency.
  */
 #ifndef PRISMA_ICS_TRIM
-#define PRISMA_ICS_TRIM 0xA7U
+#define PRISMA_ICS_TRIM 0xA0U
 #endif
 #ifndef PRISMA_ICS_FTRIM
 #define PRISMA_ICS_FTRIM 0x00U
