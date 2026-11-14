@@ -35,7 +35,7 @@ O **PRISMA** reúne instrumentos virtuais, editor de código C e leitura de tele
 A proposta é aproximar programação embarcada e análise de sinais em um mesmo ambiente: visualizar formas de onda, comparar fases e acompanhar medições enquanto a integração com a bancada evolui.
 
 > [!NOTE]
-> **Protótipo v0.2.0:** inicia em demonstração e funciona sem placa. Histórico, instrumentação avançada e execução configurável de ferramentas estão disponíveis. A aquisição e a toolchain reais na DEMOEM ainda precisam de validação física; não há firmware ColdFire homologado incluído.
+> **Protótipo v0.2.0:** inicia em demonstração e funciona sem placa. A DEMOEM/MCF51EM256 já foi gravada e validada em bancada com CodeWarrior/PEmicro e telemetria via CH340. As leituras ADC atuais são brutas; calibração metrológica e aquisição sincronizada ainda estão pendentes.
 
 ## 🧩 Sistema PRISMA — placa, touch, bateria e IoT
 
@@ -91,7 +91,7 @@ flowchart TD
 | ⚡ **Valores RMS** | Indicadores por fase calculados sobre os sinais sem componente contínua. |
 | 📊 **Harmônicas e THD** | Ajuste harmônico até h15, limitado por Nyquist, com THD, janela retangular ou Hann e frequência automática entre 40 e 70 Hz. |
 | 🧪 **Demonstração** | Sinais trifásicos sintéticos de 60 Hz, com terceira harmônica de 2,5% na fase A. |
-| 📡 **Aquisição serial** | Seleção de porta COM, leitura de JSON por linha a 115200 baud e console de comunicação. |
+| 📡 **Aquisição serial** | Seleção de porta COM, leitura de JSON por linha e console; perfil DEMOEM validado a 19200 baud. |
 | 📝 **Editor C** | Abertura e salvamento de arquivos `.c` e `.h`, com esqueleto ilustrativo para o hardware-alvo. |
 | 💾 **CSV e SQLite** | Registro incremental, sessões, consulta, filtro temporal e exportação, com origem e calibração. |
 | 🔋 **Potências AC** | Correntes RMS, P, Q da fundamental, S e fator de potência quando há correntes trifásicas sincronizadas. |
@@ -148,7 +148,7 @@ A demonstração inclui correntes sintéticas de 5 A RMS, com atraso nominal cor
 
 Abra um projeto JSON na aba **Build / depuração** para configurar os executáveis e argumentos da toolchain instalada. A saída, os erros e o mapa de memória são apresentados na aba. Um build válido calcula o hash do artefato; a gravação exige comando de gravador configurado e confirmação explícita.
 
-O [projeto GCC host](examples/projects/host-gcc.json) compila o simulador C no computador. O [template ColdFire](examples/projects/coldfire-template.json) exige os comandos reais da instalação CodeWarrior/PEmicro: não inclui uma receita pronta para a DEMOEM. A depuração usa GDB/MI e requer servidor e depurador compatíveis com o alvo. Leia o [guia da toolchain](docs/toolchain.md) antes de configurar a bancada.
+O [projeto GCC host](examples/projects/host-gcc.json) compila o simulador C no computador. O projeto ColdFire validado está em `firmware/codewarrior/EM256 Demo`; ele requer CodeWarrior 6.3.2 e PEmicro instalados. A depuração genérica do aplicativo usa GDB/MI; a bancada validada usa o HI-WAVE. Leia o [guia da bancada](docs/bancada-demoem.md).
 
 ## 📡 Comunicação com a bancada
 
@@ -157,7 +157,7 @@ O [projeto GCC host](examples/projects/host-gcc.json) compila o simulador C no c
 3. No aplicativo, clique em **Atualizar COM**, selecione a porta e use **Conectar serial**.
 4. Acompanhe o estado da conexão e as mensagens no console. Para retornar aos sinais sintéticos, clique em **Modo demo**.
 
-A comunicação utiliza **115200 baud, 8N1**, com uma mensagem JSON UTF-8 por linha:
+A comunicação genérica utiliza **115200 baud, 8N1**. A bancada DEMOEM/CH340 validada utiliza **19200 baud, 8N1**, com uma mensagem JSON UTF-8 por linha:
 
 ```json
 {"type":"sample","t":0.001,"va":110.2,"vb":-92.1,"vc":-18.3}
@@ -176,7 +176,7 @@ O firmware deve converter as leituras do ADC para unidades físicas. A presença
 ```mermaid
 flowchart LR
     DEMO["🧪 Gerador sintético"] --> BUFFER["Buffer de sinais"]
-    BOARD["🔌 DEMOEM + firmware compatível"] -. "JSON via serial · a validar" .-> SERIAL["Leitor serial · QThread"]
+    BOARD["🔌 DEMOEM + firmware ColdFire"] -->|"JSON via CH340 · 19200 8N1"| SERIAL["Leitor serial · QThread"]
     SERIAL --> BUFFER
     BUFFER --> ANALYSIS["NumPy · RMS, fasores e harmônicas"]
     ANALYSIS --> UI["🖥️ Instrumentação · PySide6 + pyqtgraph"]
@@ -202,7 +202,7 @@ src/prisma/
   core/                 Protocolo, buffer, cálculos e leitura serial
 docs/                   Arquitetura, protocolo, roadmap e imagens
 examples/               Telemetria, calibração, perfis e projetos de toolchain
-firmware/               Encoder C, HAL e simulador host; port DEMOEM pendente
+firmware/               Encoder, simulador host e projeto CodeWarrior da DEMOEM
 scripts/                Diagnóstico de drivers no Windows
 tests/                  Testes de protocolo, cálculos e interface Qt
 .github/workflows/      Validação automatizada
@@ -214,13 +214,13 @@ tests/                  Testes de protocolo, cálculos e interface Qt
 | --- | --- |
 | Interface, editor C e instrumentos em demonstração | ✅ Implementado |
 | Harmônicas limitadas à taxa de amostragem | ✅ Implementado |
-| Leitura serial JSON | 🧪 Implementado em software; validação na DEMOEM pendente |
-| Drivers USB/BDM, porta COM e ligações da bancada | ⏳ A validar |
+| Leitura serial JSON | ✅ Validada na DEMOEM via CH340 a 19200 8N1 |
+| Drivers USB/BDM, porta COM e ligações da bancada | ✅ PEmicro e CH340 validados na bancada |
 | Encoder de telemetria C e simulador host | ✅ Compilados e testados no computador |
-| Port do firmware para MCF51EM256 | ⏳ Depende de revisão, pinagem e HAL da placa |
+| Firmware para MCF51EM256 | 🧪 SCI3 e ADC bruto validados; aquisição calibrada pendente |
 | Registro de amostras CSV | ✅ Implementado para demo e serial |
 | Histórico SQLite, filtro temporal e exportação | ✅ Implementado |
-| Executor de build/gravador e cliente GDB/MI | 🧪 Implementados; compatibilidade ColdFire/PEmicro pendente |
+| Build e gravação ColdFire/PEmicro | ✅ CodeWarrior 6.3.2 e HI-WAVE validados |
 | Frequência dinâmica, calibração, janelamento e potência AC | ✅ Implementados em software |
 | Homologação física de todas as fases | ⏳ Placa indisponível nesta sessão |
 

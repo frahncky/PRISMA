@@ -1,6 +1,6 @@
 # Firmware de telemetria PRISMA
 
-Este diretório contém um encoder JSON em C99, uma aplicação usando HAL e um simulador host. **Ainda não existe imagem validada para gravação na DEMOEM/MCF51EM256.**
+Este diretório contém um encoder JSON em C99, uma aplicação usando HAL, um simulador host e o projeto `codewarrior/EM256 Demo`, compilado e gravado com sucesso na DEMOEM/MCF51EM256 real.
 
 ## Componentes
 
@@ -12,6 +12,8 @@ Este diretório contém um encoder JSON em C99, uma aplicação usando HAL e um 
 | `src/main.c` | Loop de aquisição e envio, com mensagem de estados a cada 1000 amostras. |
 | `ports/host_simulator.c` | Sinais sintéticos no computador, sem acesso a hardware. |
 | `ports/mcf51em256_port.example.c` | Port pendente, bloqueado por `#error` até configurar o hardware real. |
+| `codewarrior/EM256 Demo/Sources/main.c` | Firmware de bancada validado: SCI3 a 19200 8N1 e leitura ADC diferencial bruta. |
+| `codewarrior/EM256 Demo/cmd/prisma_flash_and_run.cmd` | Comandos HI-WAVE para carregar, verificar e executar a imagem. |
 
 ## Compilar e testar no computador
 
@@ -28,9 +30,13 @@ A suíte pytest compila o código com warnings tratados como erros, interpreta a
 
 O exemplo de projeto `examples/projects/host-gcc.json` permite compilar pela interface e gerar o mapa do linker.
 
-## Integração ColdFire
+## Integração ColdFire validada
 
-Seguir [o roteiro da bancada](../docs/bancada-demoem.md). A implementação da HAL depende da revisão efetiva da placa, dos registradores, clock, timer, SCI, ADC, GPIO e LCD. Startup, linker e bibliotecas devem vir da toolchain/BSP correspondente e respeitar suas licenças.
+O projeto foi validado com CodeWarrior for Microcontrollers 6.3.2, suporte ColdFire V1 e PEmicro/HI-WAVE. O linker limita a imagem à faixa aceita pela licença Special Edition. Artefatos de `bin/`, dados locais da IDE e executáveis proprietários não são versionados.
+
+A SCI3 usa PTC1/TX3 no J6 ligado ao RXD do CH340 e GND comum, sem ligar VCC. O perfil do aplicativo é `examples/profiles/demoem-ch340.json`. A leitura atual publica `dadp0_raw`, `dadp1_raw` e `dadp2_raw` como estado ADC; são contagens não calibradas e não constituem medição elétrica em unidade física.
+
+Para compilar, abra `EM256 Demo.mcp` e execute **Make**. Para gravar, abra a configuração PEmicro incluída no projeto, carregue `bin/Project.abs`, confirme **Connect/OK**, aguarde programar/verificar e use **Run/Go**. Depois da gravação, o cabo PEmicro pode ser removido; permanecem a alimentação da placa e o CH340.
 
 O timestamp usa milissegundos em uint32; uma sessão precisa ser reiniciada após reset do dispositivo ou antes do rollover. Cada amostra deve representar canais sincronizados. `currents_present=0` omite os canais de corrente, sem inventar leituras.
 

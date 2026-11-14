@@ -1,6 +1,16 @@
 # Integração e aceitação da DEMOEM
 
-A placa pertence ao usuário, mas não está disponível nesta sessão. Nenhum teste físico foi executado. Este roteiro define a evidência necessária para concluir as fases de hardware; os campos em aberto não são valores recomendados.
+A placa DEMOEM/MCF51EM256 foi testada fisicamente em 14/11/2026. O firmware foi compilado no CodeWarrior 6.3.2, gravado pelo PEmicro/HI-WAVE e executado de forma autônoma. A telemetria foi recebida por um CH340 em COM4 a 19200 8N1.
+
+## Resultado reproduzível
+
+- Alimentar a DEMOEM pela fonte/bateria adequada.
+- Para a serial, ligar somente `J6 PTC1/TX3 -> CH340 RXD` e `J6 GND -> CH340 GND`. Não ligar VCC/5 V/3,3 V. PTC0/RX3 é opcional e ficou desconectado no teste de transmissão.
+- Remover J7/J8 ao usar o adaptador externo, evitando disputa com a interface serial da placa.
+- Manter J36 em 1–2 para alimentar o MC9S08QE8 e J38 fechado para levar seus seis sinais PWM filtrados aos ADCs. J29 mantém DADM0/1/2 referidos ao GND na configuração de demonstração.
+- No PRISMA, carregar `examples/profiles/demoem-ch340.json`, selecionar a COM do CH340 e conectar.
+
+Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","message":"PRISMA SCI3 OK"}`. A versão ADC foi validada com `adc_timeout_mask: 0`: DADP0 e DADP2 variaram, enquanto DADP1 permaneceu em zero na configuração testada. Os valores ainda são palavras brutas, sem calibração ou unidade física.
 
 
 > Para o detalhamento de alimentação, entradas de sensores, SCI/UART, ligação da tela touch, bateria recarregável e gateway IoT, veja o [guia de ligações da DEMOEM](ligacoes-hardware-demoem.md). Ele distingue recursos confirmados da placa de integrações propostas.
@@ -32,12 +42,12 @@ Um dispositivo BDM detectado não comprova uma porta COM. Não usar VID/PID de o
 
 ## 2. Confirmar ligações antes do port de firmware
 
-Não existe mapa de pinos aprovado nesta versão. Preencher esta tabela a partir do manual da revisão efetiva, com número da página e posição dos jumpers:
+O mapa mínimo validado é:
 
 | Função | Pino/conector | Jumper | Referência no manual |
 | --- | --- | --- | --- |
-| SCI TX / RX / GND | Pendente | Pendente | Pendente |
-| ADC Va / Vb / Vc | Pendente | Pendente | Pendente |
+| SCI TX / RX / GND | J6 PTC1 / PTC0 / GND | J7/J8 removidos com CH340 | Manual e esquemático DEMOEM |
+| ADC de diagnóstico | DADP0/1/2 com DADM0/1/2 | J36 1–2, J38 fechado, J29 padrão | Manual e esquemático DEMOEM |
 | ADC Ia / Ib / Ic, se presentes | Pendente | Pendente | Pendente |
 | LEDs e GPIO de leitura | Pendente | Pendente | Pendente |
 | LCD | Pendente | Pendente | Pendente |
@@ -50,7 +60,7 @@ Confirmar sensores, escala ADC, offset, filtros anti-aliasing, sincronização e
 
 O encoder C e a aplicação em `firmware/src/` são compiláveis no computador. O port `firmware/ports/mcf51em256_port.example.c` está bloqueado com `#error` até que a HAL real seja implementada. Ele não configura registradores, não assume pinagem e não produz uma imagem gravável por si só.
 
-1. Criar o projeto MCF51EM256 na versão licenciada do CodeWarrior disponível na bancada, com BSP, startup e linker correspondentes.
+1. Abrir `firmware/codewarrior/EM256 Demo/EM256 Demo.mcp` no CodeWarrior 6.3.2.
 2. Implementar `prisma_hal_init`, `prisma_hal_next`, `prisma_hal_write` e `prisma_hal_status` conforme `firmware/include/prisma_hal.h`.
 3. Conferir a disponibilidade de C99, `stdint.h` e `vsnprintf` na biblioteca do compilador; adaptar o encoder se necessário.
 4. Usar timer de hardware e amostragem sincronizada. `time_ms` deve ser crescente; reiniciar a sessão antes de seu rollover de aproximadamente 49,7 dias ou após reset da placa.
@@ -66,15 +76,16 @@ Para analisar h15 de 60 Hz, a amostragem deve superar 1800 amostras/s. A taxa de
 
 ## 5. Aceitação física
 
-- [ ] Identificação da revisão, drivers, toolchain e probe documentada.
-- [ ] SCI validada com mensagens completas, timestamps crescentes e ausência de perdas na taxa declarada.
+- [x] Identificação de drivers, toolchain e probe documentada.
+- [x] SCI validada com mensagens JSON completas a 19200 8N1.
 - [ ] ADC comparado com referência conhecida em pelo menos três pontos por canal.
 - [ ] Frequência de 50/60 Hz e amplitudes comparadas com instrumento de referência.
-- [ ] LEDs/GPIO/ADC/LCD comparados com o estado observado na placa; a tela apenas reproduz a telemetria recebida.
+- [x] Conversão dos ADC1/2/3 concluída sem timeout e variação bruta observada em DADP0/DADP2.
+- [ ] LEDs/GPIO/LCD e escala física do ADC comparados com referência; a tela apenas reproduz a telemetria recebida.
 - [ ] Histórico CSV/SQLite com dados reais, origem e coeficientes de calibração conferidos.
-- [ ] Build ColdFire reproduzível e mapa de memória revisado.
+- [x] Build ColdFire reproduzível e mapa de memória gerado.
 - [ ] Backup do firmware anterior, se permitido e suportado pelo probe, e plano de recuperação definidos.
-- [ ] Gravação PEmicro executada com confirmação e firmware reiniciado corretamente.
+- [x] Gravação PEmicro executada com confirmação e firmware reiniciado corretamente.
 - [ ] Breakpoint, pausa, continuação e registradores conferidos na sessão real de depuração.
 - [ ] Relatório local com data, versões, comandos, hashes, resultados e limitações.
 

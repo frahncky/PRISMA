@@ -2,7 +2,7 @@
 
 ## Critério de conclusão
 
-`[x]` significa entrega implementada e testada no ambiente indicado. Testes em computador e simulador não substituem homologação na DEMOEM. O usuário possui a placa, mas ela não estava disponível nesta sessão; revisão, pinagem, CodeWarrior e PEmicro ainda precisam ser identificados.
+`[x]` significa entrega implementada e testada no ambiente indicado. A comunicação, gravação e leitura ADC bruta foram validadas na DEMOEM real; isso ainda não substitui calibração metrológica nem aquisição sincronizada.
 
 | Fase | Software | Encerramento da fase |
 | --- | --- | --- |
@@ -19,17 +19,17 @@
 - [x] Osciloscópio, fasores, harmônicas e valores RMS em demonstração
 - [x] Leitura serial e protocolo JSON v1
 - [x] Testes automatizados do parser, cálculos e interface sem tela
-- [ ] Testes com placa DEMOEM real — depende da bancada disponível
+- [x] Testes de gravação, execução e serial com placa DEMOEM real
 
 ## Fase 2 — aquisição real
 
 - [x] Coleta de portas, VID/PID e metadados USB pelo aplicativo
 - [x] Script Windows de inventário USB, COM e versões dos drivers
-- [ ] Identificação efetiva dos drivers BDM, VID/PID e COM da DEMOEM
+- [x] Identificação do PEmicro para BDM e do CH340 como porta COM
 - [x] Roteiro de integração e tabelas para documentar a revisão da placa
-- [ ] Confirmação dos jumpers SCI, pinos e condicionamento no manual da revisão
+- [x] Confirmação e teste da SCI3 em J6 e do CH340 externo
 - [x] Encoder de telemetria C, interface HAL, aplicação e simulador host compilados e testados
-- [ ] Port da HAL para ColdFire V1, startup/linker e firmware gravável na DEMOEM
+- [x] Projeto ColdFire V1 com startup/linker, SCI3 e ADC bruto gravável na DEMOEM
 - [x] Recepção e tela de estados LED, GPIO, ADC e LCD informados pelo firmware
 - [ ] Comparação dos indicadores com estados físicos da placa
 - [x] Registro incremental CSV, com origem, correntes opcionais e calibração
@@ -43,8 +43,8 @@
 - [x] Projeto GCC host de referência compilável, com artefato e mapa reais
 - [x] Hash do artefato e confirmação explícita antes de executar o gravador configurado
 - [x] Cliente GDB/MI para conexão remota, breakpoints e inspeção de registradores; testes com processo de teste
-- [ ] Receita CodeWarrior/ColdFire específica da instalação, compilada e validada
-- [ ] Comando PEmicro específico do probe/versão, gravação física e recuperação validadas
+- [x] Receita CodeWarrior 6.3.2/ColdFire compilada e validada
+- [x] Gravação física pelo PEmicro/HI-WAVE e execução sem o USB BDM validadas
 - [ ] Compatibilidade do servidor/depurador com ColdFire e teste real de breakpoint/registradores
 
 ## Fase 4 — instrumentação avançada

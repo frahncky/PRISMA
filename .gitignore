@@ -30,3 +30,10 @@ prisma-host.exe
 /gateway/esp32s3/include/secrets.h
 /gateway/esp32s3/.pio/
 /gateway/esp32s3/.vscode/
+
+# CodeWarrior: artefatos e estado local da IDE
+firmware/codewarrior/**/bin/
+firmware/codewarrior/**/*_Data/
+firmware/codewarrior/**/*.hwl
+firmware/codewarrior/**/*.mem
+firmware/codewarrior/**/project.ini
