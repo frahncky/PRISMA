@@ -27,7 +27,8 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
     rows = "".join(
         f"<tr><td><span class='dot' style='background:{PHASE_COLORS.get(phase, '#888')}'></span>{phase}</td>"
         f"<td>{rms:.3f}</td><td>{abs(result.phasors[phase]):.3f}</td>"
-        f"<td>{_angle(result.phasors[phase], reference)}</td></tr>"
+        f"<td>{_angle(result.phasors[phase], reference)}</td>"
+        f"<td>{'—' if result.crest.get(phase) is None else format(result.crest[phase], '.2f')}</td></tr>"
         for phase, rms in result.rms.items())
     power_rows = "".join(f"<tr><td>{phase}</td><td>{p.active_w:.3f}</td>"
                          f"<td>{p.reactive_fundamental_var:.3f}</td><td>{p.apparent_va:.3f}</td>"
@@ -86,7 +87,7 @@ footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6e
 </div>
 {figures}
 <h2>Tensões AC</h2>
-<table><tr><th>Fase</th><th>RMS (V)</th><th>Fundamental RMS (V)</th><th>Ângulo (ref. A)</th></tr>{rows}</table>
+<table><tr><th>Fase</th><th>RMS (V)</th><th>Fundamental RMS (V)</th><th>Ângulo (ref. A)</th><th>Fator de crista</th></tr>{rows}</table>
 {line_table}
 {seq_table}
 <h2>Potências AC</h2><p class="muted">P e S incluem distorção; Q1 representa apenas a fundamental.</p>
