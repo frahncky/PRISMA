@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, EnergyCounter, SignalBuffer, analyze,
+from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
                                      line_voltages, sequence_components)
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
@@ -74,7 +74,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.raw_counts = False
         pg.setConfigOptions(antialias=True, background=theme.PLOT_BG, foreground=theme.MUTED)
         self.buffer = SignalBuffer()
-        self.energy = EnergyCounter()
+        self.stats = MeterStats()
+        self.energy = self.stats.energy
         self.reader: SerialReader | None = None
         self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
@@ -364,7 +365,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         kpis.addWidget(card, 0, 1)
         reset = QPushButton("Zerar")
         reset.setObjectName("ghost")
-        reset.setToolTip("Zerar os contadores de energia")
+        reset.setToolTip("Zerar energia, demanda máxima e valores mínimos/máximos")
         reset.clicked.connect(lambda _=False: self.reset_energy())
         card, self.energy_label, self.energy_hint = self._card("Energia ativa", theme.SUCCESS, "aguardando correntes",
                                                                action=reset)
@@ -838,7 +839,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             float(t[0]), float(t[-1]))
 
     def _show_energy(self, result, t_end: float) -> None:
-        self.energy.update(t_end, result)
+        self.stats.update(t_end, result)
         if not result.power:
             self.energy_label.setText("---")
             self.reactive_energy_label.setText("---")
@@ -851,7 +852,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.energy_hint.setText(f"acumulada em {hours:d}:{minutes:02d}:{seconds:02d}")
 
     def reset_energy(self) -> None:
-        self.energy.reset()
+        self.stats.reset()
         if hasattr(self, "energy_label"):
             self.energy_label.setText("0 Wh")
             self.reactive_energy_label.setText("0 varh")
@@ -897,12 +898,17 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self.page_title.setText(button.property("title"))
 
     def open_touch_panel(self, fullscreen: bool = True):
-        """Abre o painel touch (valores grandes e perguntas faladas) sobre a medição atual."""
-        from prisma.ui.touch_panel import TouchPanel
+        """Abre o painel touch (medidor inteligente em tela cheia) sobre a medição atual."""
+        from prisma.ui.touch_panel import PanelData, TouchPanel
+
+        def data() -> PanelData:
+            t, voltages = self.buffer.arrays(duration_s=0.12)
+            currents = self.buffer.currents(duration_s=0.12)
+            return PanelData(self.last_analysis[0] if self.last_analysis else None, self.mode, self.stats,
+                             t, voltages, currents)
         panel = getattr(self, "touch_panel", None)
         if panel is None or not panel.isVisible():
-            panel = TouchPanel(lambda: (self.last_analysis[0] if self.last_analysis else None, self.mode), self,
-                               energy=lambda: self.energy)
+            panel = TouchPanel(data, self)
             panel.setWindowIcon(self.windowIcon())
             self.touch_panel = panel
         if self.screen() is not None:

@@ -10,8 +10,6 @@ import pytest
 from prisma.core.query import parse
 from prisma.core.speech import SpeechUnavailable, Transcriber, grammar, open_transcriber
 from prisma.ui.microphone import MicListener
-from prisma.ui.touch_panel import TouchPanel
-from test_query import _measurement
 
 
 class FakeRecognizer:
@@ -89,29 +87,6 @@ def test_tempo_esgotado_entrega_o_que_ouviu(app):
     listener.feed(b"frequencia")
     listener._finish()  # o timer de 8 s dispara
     assert final == ["frequencia"]
-
-
-def test_falar_no_painel_pergunta_e_responde_em_voz(app):
-    listener = _listener(app)
-    spoken = []
-    panel = TouchPanel(lambda: (_measurement(), "DEMO"), speaker=spoken.append, listener=listener)
-    panel.mic_button.click()
-    assert panel.mic_button.text() == "Ouvindo…"
-    for chunk in (b"corrente", b"da", b"fase", "bê".encode(), b"<pausa>"):
-        listener.feed(chunk)
-    assert spoken == ["A corrente da fase B é 5,00 ampères."]
-    assert panel.mic_button.text() == "Falar" and not panel.mic_button.isChecked()
-    panel.close()
-
-
-def test_painel_sem_vosk_mostra_instrucao(app):
-    def unavailable():
-        raise SpeechUnavailable('Reconhecimento de voz não instalado. Rode: pip install -e ".[voz]"')
-    listener = MicListener(transcriber_factory=unavailable)
-    panel = TouchPanel(lambda: (None, ""), speaker=lambda t: None, listener=listener)
-    panel.mic_button.click()
-    assert "pip install" in panel.answer_label.text() and not panel.mic_button.isChecked()
-    panel.close()
 
 
 def test_extracao_do_modelo_bloqueia_caminho_fora_da_pasta(tmp_path):

@@ -1,6 +1,7 @@
 """Processamento AC: frequência, fasores, harmônicas e potência por fase."""
 from collections import deque
 from dataclasses import dataclass, field
+from datetime import datetime
 import math
 import numpy as np
 from .protocol import Sample
@@ -237,23 +238,103 @@ class EnergyCounter:
 
     Cada análise soma P × Δt desde a anterior. Um salto para trás (buffer
     reiniciado) ou uma lacuna maior que ``max_gap_s`` só ressincroniza.
+    A energia ativa também é separada em importada (P > 0) e exportada (P < 0).
     """
     active_wh: float = 0.0
     reactive_varh: float = 0.0
+    import_wh: float = 0.0
+    export_wh: float = 0.0
     seconds: float = 0.0
     max_gap_s: float = 60.0
     _last_t: float | None = None
 
     def reset(self) -> None:
-        self.active_wh = self.reactive_varh = self.seconds = 0.0
+        self.active_wh = self.reactive_varh = self.import_wh = self.export_wh = self.seconds = 0.0
         self._last_t = None
 
-    def update(self, t_end: float, result: Measurement) -> None:
+    def update(self, t_end: float, result: Measurement) -> float:
+        """Integra até ``t_end``; devolve o Δt efetivamente somado (0 se ressincronizou)."""
         total = totals(result)
-        if total is not None and self._last_t is not None:
+        dt = 0.0
+        if total is not None and self._last_t is not None and 0 < t_end - self._last_t <= self.max_gap_s:
             dt = t_end - self._last_t
-            if 0 < dt <= self.max_gap_s:
-                self.active_wh += total.active_w * dt / 3600
-                self.reactive_varh += total.reactive_var * dt / 3600
-                self.seconds += dt
+            energy = total.active_w * dt / 3600
+            self.active_wh += energy
+            if energy >= 0:
+                self.import_wh += energy
+            else:
+                self.export_wh -= energy
+            self.reactive_varh += total.reactive_var * dt / 3600
+            self.seconds += dt
         self._last_t = t_end
+        return dt
+
+
+@dataclass(frozen=True)
+class TrendPoint:
+    t: float
+    voltage: tuple[float, float, float]
+    current: tuple[float, float, float] | None
+    active_w: float | None
+    demand_w: float | None
+
+
+@dataclass
+class MeterStats:
+    """Grandezas de um medidor inteligente acumuladas desde o último zeramento.
+
+    - energia (``EnergyCounter``);
+    - demanda ativa: média móvel de P na janela ``demand_window_s`` (15 min) e
+      a máxima registrada, com o horário (relógio do computador);
+    - mínimos e máximos de tensão e corrente por fase;
+    - tendência com um ponto por ``trend_step_s`` (tempo das amostras).
+    """
+    demand_window_s: float = 900.0
+    trend_step_s: float = 1.0
+    trend_points: int = 3600
+    energy: EnergyCounter = field(default_factory=EnergyCounter)
+    max_demand_w: float | None = None
+    max_demand_at: datetime | None = None
+    v_min: dict[str, float] = field(default_factory=dict)
+    v_max: dict[str, float] = field(default_factory=dict)
+    i_max: dict[str, float] = field(default_factory=dict)
+    trend: deque = field(default_factory=deque)
+    _demand: deque = field(default_factory=deque)  # (t, P·Δt, Δt)
+
+    def reset(self) -> None:
+        self.energy.reset()
+        self.max_demand_w = self.max_demand_at = None
+        for values in (self.v_min, self.v_max, self.i_max, self.trend, self._demand):
+            values.clear()
+
+    @property
+    def demand_w(self) -> float | None:
+        span = sum(dt for _, _, dt in self._demand)
+        return sum(e for _, e, _ in self._demand) / span if span > 0 else None
+
+    def update(self, t_end: float, result: Measurement, now: datetime | None = None) -> None:
+        if self.trend and t_end < self.trend[-1].t:  # tempo recomeçou: nova série
+            self.trend.clear()
+            self._demand.clear()
+        dt = self.energy.update(t_end, result)
+        total = totals(result)
+        for phase in PHASES:
+            v = result.rms[phase]
+            self.v_min[phase] = min(v, self.v_min.get(phase, v))
+            self.v_max[phase] = max(v, self.v_max.get(phase, v))
+            if phase in result.current_rms:
+                self.i_max[phase] = max(result.current_rms[phase], self.i_max.get(phase, 0.0))
+        if total is not None and dt > 0:
+            self._demand.append((t_end, total.active_w * dt, dt))
+            while self._demand and self._demand[0][0] <= t_end - self.demand_window_s:
+                self._demand.popleft()
+            demand = self.demand_w
+            if demand is not None and (self.max_demand_w is None or demand > self.max_demand_w):
+                self.max_demand_w, self.max_demand_at = demand, now or datetime.now()
+        if not self.trend or t_end - self.trend[-1].t >= self.trend_step_s:
+            self.trend.append(TrendPoint(
+                t_end, tuple(result.rms[p] for p in PHASES),
+                tuple(result.current_rms[p] for p in PHASES) if result.current_rms else None,
+                None if total is None else total.active_w, self.demand_w if total is not None else None))
+            while len(self.trend) > self.trend_points:
+                self.trend.popleft()
