@@ -15,7 +15,7 @@ import urllib.request
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from prisma.core.speech import MODEL_NAME, MODEL_URL, default_model_dir  # noqa: E402
+from prisma.core.speech import MODEL_NAME, MODEL_URL, default_model_dir, model_present  # noqa: E402
 
 
 def extract(archive: Path, target_parent: Path) -> Path:
@@ -35,7 +35,7 @@ def main() -> None:
     args = parser.parse_args()
     parent = args.destino or default_model_dir().parent
     final = parent / MODEL_NAME
-    if (final / "am").is_dir():
+    if model_present(final):
         print(f"Modelo já instalado em {final}")
         return
     parent.mkdir(parents=True, exist_ok=True)
