@@ -226,6 +226,9 @@ def test_rajada_sem_calibracao_usa_contagens_e_frequencia_automatica(window):
     window._draw_signals()
     assert window.frequency_combo.currentIndex() == 2
     assert abs(window.last_analysis[0].frequency_hz - 51.85) < 0.2
-    assert window.metric_labels["A"].text().endswith("cont.")
+    from prisma.ui.main_window import ADC_VREF_V, ADC_FULL_SCALE
+    rms_counts = 20000 / np.sqrt(2)
+    shown = float(window.metric_labels["A"].text().split()[0])
+    assert abs(shown - rms_counts * ADC_VREF_V / ADC_FULL_SCALE) < 0.02
     window.start_demo()
     assert not window.raw_counts

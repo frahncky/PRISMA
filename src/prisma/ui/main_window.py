@@ -25,6 +25,9 @@ from prisma.core.history import SqliteRecorder
 from prisma.ui.features import FeaturesMixin
 
 COLORS = {"A": "#4ad6ea", "B": "#f2b84b", "C": "#e27eaf"}
+# DEMOEM: ADC de 16 bits com VREFH = VDD do regulador de 3,3 V (confirmar com multímetro).
+ADC_VREF_V = 3.3
+ADC_FULL_SCALE = 65535
 ICON_PATH = Path(__file__).with_name("assets") / "prisma.svg"
 
 
@@ -484,20 +487,17 @@ class MainWindow(FeaturesMixin, QMainWindow):
             port = self.reader.port if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
 
-    def _counts(self) -> bool:
-        """Dados brutos do ADC sem calibração: exibir contagens, não volts."""
+    def _pin_volts(self) -> bool:
+        """Rajada sem calibração: valores convertidos para tensão no pino do ADC."""
         return self.raw_counts and not self.calibration.channels
 
     def _apply_units(self) -> None:
-        if self._counts():
-            self.wave.setLabel("left", "ADC (contagens)", units=None)
-            self.phasor.setLabel("left", "Imaginário (contagens)", units=None)
-            self.phasor.setLabel("bottom", "Real (contagens)", units=None)
+        label = "Tensão no pino ADC" if self._pin_volts() else "Tensão"
+        self.wave.setLabel("left", label, units="V")
+        self.phasor.setLabel("left", "Imaginário", units="V")
+        self.phasor.setLabel("bottom", "Real", units="V")
+        if self.raw_counts:
             self.phasor.enableAutoRange()
-        else:
-            self.wave.setLabel("left", "Tensão", units="V")
-            self.phasor.setLabel("left", "Imaginário", units="V")
-            self.phasor.setLabel("bottom", "Real", units="V")
 
     def _on_block(self, block) -> None:
         """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
@@ -506,18 +506,21 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self._apply_units()
             if self.frequency_combo.currentIndex() != 2:
                 self.frequency_combo.setCurrentIndex(2)
-                self._log("Rajada recebida: frequência em Automática (40–70 Hz) e valores em "
-                          "contagens do ADC até carregar uma calibração.")
-        last =self.buffer.arrays(duration_s=0.0)[0]
+            self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
+                      f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
+        last = self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
+        scale = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else None
         for sample in block.samples:
+            if scale is not None:
+                sample = Sample(sample.t, sample.va * scale, sample.vb * scale, sample.vc * scale)
             self._on_sample(sample)
         names = "/".join(block.channels)
         warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
+        unit = f"tensão no pino ADC (Vref {ADC_VREF_V} V)" if scale else "calibração ativa"
         self.statusBar().showMessage(
-            f"Rajada {block.seq}: {len(block.samples)} amostras de {names} a {block.fs_hz:.1f} Hz "
-            f"(contagens brutas; carregue uma calibração para unidades){warning}")
+            f"Rajada {block.seq}: {len(block.samples)} amostras de {names} a {block.fs_hz:.1f} Hz · {unit}{warning}")
 
     def _on_disconnected(self) -> None:
         self.stop_recording()
@@ -618,7 +621,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.phasor.setTitle(f"DIAGRAMA FASORIAL · {result.frequency_hz:.3f} Hz")
         for phase in ("A", "B", "C"):
             self.metric_labels[phase].setText(
-                f"{result.rms[phase]:.0f} cont." if self._counts() else f"{result.rms[phase]:.2f} V")
+                f"{result.rms[phase]:.3f} V" if self._pin_volts() else f"{result.rms[phase]:.2f} V")
         self.phasor.clear()
         self.phasor.addItem(pg.InfiniteLine(
             pos=0, angle=0, pen=pg.mkPen("#506579", width=1)
@@ -678,7 +681,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))
-        unit = "cont." if self._counts() else "V"
+        unit = "V"
         self.details.setText(
             f"{source}\n"
             f"{thd_text}\n\n"
