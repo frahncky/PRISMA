@@ -39,3 +39,6 @@ firmware/codewarrior/**/*_Data/
 firmware/codewarrior/**/*.hwl
 firmware/codewarrior/**/*.mem
 firmware/codewarrior/**/project.ini
+
+# Diagnóstico serial/USB salvo pelo app (dados locais da máquina)
+diagnostico-prisma.json
