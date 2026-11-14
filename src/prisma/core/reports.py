@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from .measurement import Measurement, sequence_components
+from .measurement import Measurement, line_voltages, sequence_components
 
 PHASE_COLORS = {"A": "#0f9fb8", "B": "#c98a12", "C": "#c0558a"}
 
@@ -46,6 +46,11 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
     seq = sequence_components(result.phasors) if set("ABC") <= set(result.phasors) else None
     unbalance = (f"{seq.unbalance_percent:.2f} %" if seq and seq.unbalance_percent is not None
                  else "indisponível")
+    line_rows = ("".join(f"<tr><td>{name}</td><td>{abs(v):.3f}</td><td>{_angle(v, reference)}</td></tr>"
+                         for name, v in line_voltages(result.phasors).items())
+                 if set("ABC") <= set(result.phasors) else "")
+    line_table = (f"<h2>Tensões de linha (fundamental)</h2><table><tr><th>Par</th><th>RMS (V)</th>"
+                  f"<th>Ângulo (ref. A)</th></tr>{line_rows}</table>" if line_rows else "")
     seq_table = (f"<h2>Componentes simétricas</h2><table><tr><th>Positiva (V)</th><th>Negativa (V)</th>"
                  f"<th>Zero (V)</th><th>Desequilíbrio V2/V1</th></tr><tr><td>{seq.positive:.3f}</td>"
                  f"<td>{seq.negative:.3f}</td><td>{seq.zero:.3f}</td><td>{unbalance}</td></tr></table>"
@@ -81,6 +86,7 @@ footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6e
 {figures}
 <h2>Tensões AC</h2>
 <table><tr><th>Fase</th><th>RMS (V)</th><th>Fundamental RMS (V)</th><th>Ângulo (ref. A)</th></tr>{rows}</table>
+{line_table}
 {seq_table}
 <h2>Potências AC</h2><p class="muted">P e S incluem distorção; Q1 representa apenas a fundamental.</p>
 {power_table}

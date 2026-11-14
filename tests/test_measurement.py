@@ -112,3 +112,13 @@ def test_sequence_components_balanced_and_unbalanced():
     seq = sequence_components({"A": 10, "B": 10 * a * a, "C": 10 * a})  # sequência invertida
     assert seq.positive < 1e-9 and abs(seq.negative - 10) < 1e-9
     assert sequence_components({"A": 0, "B": 0, "C": 0}).unbalance_percent is None
+
+
+def test_line_voltages_balanced_are_sqrt3_phase():
+    import cmath
+    from prisma.core.measurement import line_voltages
+    a = cmath.rect(1, -2 * cmath.pi / 3)
+    lines = line_voltages({"A": 127, "B": 127 * a, "C": 127 * a * a})
+    for v in lines.values():
+        assert abs(abs(v) - 127 * 3 ** 0.5) < 1e-9
+    assert abs(cmath.phase(lines["AB"]) - cmath.pi / 6) < 1e-9

@@ -183,3 +183,9 @@ def sequence_components(phasors: dict[str, complex]) -> Sequence:
     return Sequence(float(abs(va + a * vb + a * a * vc) / 3),
                     float(abs(va + a * a * vb + a * vc) / 3),
                     float(abs(va + vb + vc) / 3))
+
+
+def line_voltages(phasors: dict[str, complex]) -> dict[str, complex]:
+    """Fasores de linha (fundamental): Vab = Va − Vb, Vbc = Vb − Vc, Vca = Vc − Va."""
+    return {"AB": phasors["A"] - phasors["B"], "BC": phasors["B"] - phasors["C"],
+            "CA": phasors["C"] - phasors["A"]}
