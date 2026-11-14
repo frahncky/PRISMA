@@ -212,3 +212,20 @@ def test_rajada_alimenta_osciloscopio_e_reinicia_com_seq_menor(window):
     window._on_block(block(0))  # firmware reiniciou
     assert window.buffer.arrays(duration_s=1.0)[0].size == 500
     assert "Rajada 0" in window.statusBar().currentMessage()
+
+
+def test_rajada_sem_calibracao_usa_contagens_e_frequencia_automatica(window):
+    import numpy as np
+    from prisma.core.protocol import Sample, SampleBlock
+
+    fs = 1995.487
+    samples = tuple(Sample(i / fs, *(30000 + 20000 * np.sin(2 * np.pi * 51.85 * i / fs + k * 2.094)
+                    for k in range(3))) for i in range(500))
+    window.frequency_combo.setCurrentIndex(0)
+    window._on_block(SampleBlock(0, fs, ("ad4", "ad5", "ad6"), samples))
+    window._draw_signals()
+    assert window.frequency_combo.currentIndex() == 2
+    assert abs(window.last_analysis[0].frequency_hz - 51.85) < 0.2
+    assert window.metric_labels["A"].text().endswith("cont.")
+    window.start_demo()
+    assert not window.raw_counts

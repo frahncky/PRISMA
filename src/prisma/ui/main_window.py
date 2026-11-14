@@ -98,6 +98,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
         self.paused = False
+        self.raw_counts = False
         pg.setConfigOptions(antialias=True, background="#132231", foreground="#b6cad9")
         self.buffer = SignalBuffer()
         self.reader: SerialReader | None = None
@@ -483,9 +484,31 @@ class MainWindow(FeaturesMixin, QMainWindow):
             port = self.reader.port if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
 
+    def _counts(self) -> bool:
+        """Dados brutos do ADC sem calibração: exibir contagens, não volts."""
+        return self.raw_counts and not self.calibration.channels
+
+    def _apply_units(self) -> None:
+        if self._counts():
+            self.wave.setLabel("left", "ADC (contagens)", units=None)
+            self.phasor.setLabel("left", "Imaginário (contagens)", units=None)
+            self.phasor.setLabel("bottom", "Real (contagens)", units=None)
+            self.phasor.enableAutoRange()
+        else:
+            self.wave.setLabel("left", "Tensão", units="V")
+            self.phasor.setLabel("left", "Imaginário", units="V")
+            self.phasor.setLabel("bottom", "Real", units="V")
+
     def _on_block(self, block) -> None:
         """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
-        last = self.buffer.arrays(duration_s=0.0)[0]
+        if not self.raw_counts:
+            self.raw_counts = True
+            self._apply_units()
+            if self.frequency_combo.currentIndex() != 2:
+                self.frequency_combo.setCurrentIndex(2)
+                self._log("Rajada recebida: frequência em Automática (40–70 Hz) e valores em "
+                          "contagens do ADC até carregar uma calibração.")
+        last =self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
         for sample in block.samples:
@@ -520,6 +543,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.hw_status.setStyleSheet("color: #f5bf69;")
         self.b_connect.setText("Conectar serial")
         self._set_mode("DEMONSTRAÇÃO — SINAIS SINTÉTICOS")
+        if self.raw_counts:
+            self.raw_counts = False
+            self._apply_units()
+            self.phasor.setXRange(-160, 160, padding=0)
+            self.phasor.setYRange(-160, 160, padding=0)
         self._log("Modo demonstração ativado. Dados não provêm da placa.")
 
     def _tick(self) -> None:
@@ -589,7 +617,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.frequency_label.setText(f"{result.frequency_hz:.3f} Hz")
         self.phasor.setTitle(f"DIAGRAMA FASORIAL · {result.frequency_hz:.3f} Hz")
         for phase in ("A", "B", "C"):
-            self.metric_labels[phase].setText(f"{result.rms[phase]:.2f} V")
+            self.metric_labels[phase].setText(
+                f"{result.rms[phase]:.0f} cont." if self._counts() else f"{result.rms[phase]:.2f} V")
         self.phasor.clear()
         self.phasor.addItem(pg.InfiniteLine(
             pos=0, angle=0, pen=pg.mkPen("#506579", width=1)
@@ -649,12 +678,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))
+        unit = "cont." if self._counts() else "V"
         self.details.setText(
             f"{source}\n"
             f"{thd_text}\n\n"
-            f"Fasor A: {abs(result.phasors['A']):.1f} V ∠ {angles['A']:.1f}°\n"
-            f"Fasor B: {abs(result.phasors['B']):.1f} V ∠ {angles['B']:.1f}°\n"
-            f"Fasor C: {abs(result.phasors['C']):.1f} V ∠ {angles['C']:.1f}°\n"
+            f"Fasor A: {abs(result.phasors['A']):.1f} {unit} ∠ {angles['A']:.1f}°\n"
+            f"Fasor B: {abs(result.phasors['B']):.1f} {unit} ∠ {angles['B']:.1f}°\n"
+            f"Fasor C: {abs(result.phasors['C']):.1f} {unit} ∠ {angles['C']:.1f}°\n"
             f"{power_text}\nEstimativas sem certificação metrológica."
         )
 

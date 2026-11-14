@@ -176,6 +176,7 @@ class FeaturesMixin:
         self._invalidate_analysis()
         self.calibration = calibration
         self.calibration_label.setText(calibration.name)
+        self._apply_units()
         self._log(f"Calibração ativa: {calibration.name}; buffer reiniciado.")
 
     def _invalidate_analysis(self) -> None:
