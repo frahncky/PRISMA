@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
-from prisma.core.calibration import Calibration, gains_from_reference
+from prisma.core.calibration import Calibration, delays_from_resistive_load, gains_from_reference
 import pyqtgraph as pg
 
 from prisma.ui import theme
@@ -48,6 +48,7 @@ class FeaturesMixin:
             ("Salvar diagnóstico serial/USB…", self.save_inventory),
             ("Carregar perfil de dispositivo…", self.load_device),
             ("Calibrar com multímetro…", self.calibrate_from_reference),
+            ("Calibrar fase com carga resistiva…", self.calibrate_phase),
             ("Carregar calibração…", self.load_calibration),
             ("Restaurar calibração identidade", self.reset_calibration),
         ):
@@ -356,6 +357,78 @@ class FeaturesMixin:
                 QMessageBox.critical(self, "Calibração", str(exc))
         self._set_calibration(calibration)
         self._log("Ganhos calibrados: " + ", ".join(f"{ch} = {g:.6g}" for ch, g in gains.items()))
+
+    def calibrate_phase(self, confirm: bool | None = None, filename: str | None = None) -> None:
+        """Assistente: com carga resistiva (FP = 1), mede o atraso de cada corrente.
+
+        O atraso residual medido soma ao ``delay_us`` já ativo, porque a análise
+        corrente já está compensada por ele. ``confirm``/``filename`` permitem
+        executar sem diálogos (testes).
+        """
+        if self.last_analysis is None:
+            QMessageBox.information(self, "Calibração de fase", "Aguarde uma análise válida (sinal estável na tela).")
+            return
+        result = self.last_analysis[0]
+        if not result.current_phasors:
+            QMessageBox.information(self, "Calibração de fase",
+                                    "A calibração de fase requer correntes ia, ib e ic sincronizadas com as tensões.")
+            return
+        try:
+            residual = delays_from_resistive_load(result.phasors, result.current_phasors, result.frequency_hz)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Calibração de fase", str(exc))
+            return
+        current = {ch: self.calibration.channels.get(ch, {}).get("delay_us", 0.0) for ch in residual}
+        delays = {ch: current[ch] + residual[ch] for ch in residual}
+        if confirm is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Calibrar fase com carga resistiva")
+            layout = QVBoxLayout(dialog)
+            intro = QLabel("Ligue uma carga puramente resistiva (lâmpada incandescente, resistor de potência ou "
+                           "chuveiro), sem motor nem fonte chaveada. Com FP = 1, tensão e corrente deveriam estar "
+                           "em fase: a diferença medida vira o atraso de cada canal de corrente.")
+            intro.setWordWrap(True)
+            layout.addWidget(intro)
+            table = QTableWidget(len(delays), 4)
+            table.setHorizontalHeaderLabels(["Canal", "Defasagem medida", "Atraso atual", "Novo atraso"])
+            table.verticalHeader().setVisible(False)
+            table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+            for row, channel in enumerate(delays):
+                degrees = residual[channel] * 1e-6 * 360 * result.frequency_hz
+                for column, text in enumerate((channel.upper(), f"{degrees:+.2f}°",
+                                               f"{current[channel]:+.1f} µs", f"{delays[channel]:+.1f} µs")):
+                    table.setItem(row, column, QTableWidgetItem(text))
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+            table.setFixedHeight(table.horizontalHeader().height()
+                                 + sum(table.rowHeight(r) for r in range(table.rowCount())) + 4)
+            layout.addWidget(table)
+            note = QLabel(f"Frequência da análise: {result.frequency_hz:.2f} Hz. Repita até a defasagem ficar perto de 0°.")
+            note.setStyleSheet(f"color: {theme.MUTED}")
+            layout.addWidget(note)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Aplicar")
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            confirm = dialog.exec() == QDialog.DialogCode.Accepted
+        if not confirm:
+            return
+        from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
+        default_gain = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else 1.0
+        channels = {ch: dict(cfg) for ch, cfg in self.calibration.channels.items()}
+        for channel, delay in delays.items():
+            channels.setdefault(channel, {"gain": default_gain, "offset": 0.0})["delay_us"] = round(delay, 2)
+        calibration = Calibration(channels, f"Fase {datetime.now():%Y-%m-%d %H:%M}")
+        if filename is None:
+            filename, _ = QFileDialog.getSaveFileName(self, "Salvar calibração", "calibracao-fase.json", "JSON (*.json)")
+        if filename:
+            try:
+                calibration.save(Path(filename))
+                self._log(f"Calibração salva: {filename}")
+            except OSError as exc:
+                QMessageBox.critical(self, "Calibração", str(exc))
+        self._set_calibration(calibration)
+        self._log("Atrasos calibrados: " + ", ".join(f"{ch} = {d:+.1f} µs" for ch, d in delays.items()))
 
     def load_calibration(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(self, "Calibração", "", "JSON (*.json)")
