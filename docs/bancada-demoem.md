@@ -19,6 +19,12 @@ O mapeamento do MCF51EM256 foi confirmado pela tabela de canais da AN3949: DAD0=
 
 Captura de 30 s em 14/11/2026 com o mesmo firmware: 175 linhas (5,8 linhas/s), `adc_timeout_mask` sempre 0. Os canais ficam em zero entre 45 % e 66 % do tempo e raramente altos juntos (30 % das linhas com dois ou mais canais diferentes de zero), coerente com três sinais defasados. AD5 satura em 65535 em 20 das 175 linhas; AD6 não passa de 32032. Os valores se agrupam em degraus próximos de múltiplos de ~8000 contagens. A 5,8 linhas/s não se reconstrói a forma de onda de 50/60 Hz: é necessária captura em rajada com taxa fixa.
 
+### Rajada a ~1995 Hz (14/11/2026)
+
+- **Gravação automática:** `scripts/gravar_demoem.ps1 -Build` compila, executa `FLASH SELECT/ERASE/ARM`, `LOAD … VERIFYALL`, `RESET` e `GO` pelo HI-WAVE sem interação, gravando o log em `bin/gravacao.log`.
+- **Trim do oscilador:** o `FLASH ERASE` apaga o trim de fábrica em `0x3FE/0x3FF` (a SCI caiu para ~15 500 baud). O firmware agora grava o próprio trim (`PRISMA_ICS_TRIM`). `scripts/calibrar_trim_demoem.py COM4 [min] [max]` mede o baud real e encontrou **TRIM = 0xA7** (0x7F → 1,120×; 0x9F → 1,022×; 0xAF → 0,977×; 0xA7 → 1,000× do nominal, resolução da varredura ~1,5 %).
+- **Resultado:** blocos de 500 amostras × 3 canais, `adc_timeout_mask` 0. Fundamental estimada em **51,85 Hz**, estável entre blocos; fasores AD4/AD5/AD6 separados por **120°**. Cada canal forma um lóbulo positivo em degraus (pico ~56 000–65 535) ocupando cerca de um terço do período e fica em zero no restante; THD estimada ~95 %. A frequência depende do oscilador do QE8 e do trim do EM256; confirmar com instrumento de referência antes de interpretar 51,85 Hz.
+
 ## Teste com USB único (gravação + telemetria pela PEmicro) — pendente
 
 Objetivo: dispensar o CH340 usando a serial virtual do Embedded Multilink da própria DEMOEM. O diagnóstico de 13/11/2026 mostrou a interface `VID_1357&PID_0504&MI_01` ("USB and Serial Interface") **sem porta COM** (`serial_ports: []`). O manual cita o Terminal Window Utility do "P&E Embedded Multilink Toolkit" com opção "virtual USB COM"; não está confirmado que o Windows crie uma COM padrão acessível ao pyserial.

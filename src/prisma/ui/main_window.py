@@ -458,6 +458,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reader.connected.connect(lambda: self._on_connected(port) if self.reader is reader else None)
         self.reader.sample_received.connect(lambda sample: self._on_sample(sample) if self.reader is reader else None)
         self.reader.status_received.connect(lambda status: self._on_hardware_status(status) if self.reader is reader else None)
+        self.reader.block_received.connect(lambda block: self._on_block(block) if self.reader is reader else None)
         self.reader.message.connect(self._log)
         self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
         self.reader.start()
@@ -481,6 +482,19 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
             port = self.reader.port if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
+
+    def _on_block(self, block) -> None:
+        """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
+        last = self.buffer.arrays(duration_s=0.0)[0]
+        if last.size and block.samples[0].t <= last[-1]:
+            self.buffer.clear()
+        for sample in block.samples:
+            self._on_sample(sample)
+        names = "/".join(block.channels)
+        warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
+        self.statusBar().showMessage(
+            f"Rajada {block.seq}: {len(block.samples)} amostras de {names} a {block.fs_hz:.1f} Hz "
+            f"(contagens brutas; carregue uma calibração para unidades){warning}")
 
     def _on_disconnected(self) -> None:
         self.stop_recording()

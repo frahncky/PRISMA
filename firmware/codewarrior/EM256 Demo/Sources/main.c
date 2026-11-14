@@ -7,6 +7,21 @@
  * J38 connects the QE8 filtered PWM signals to the EM256 ADC inputs.
  */
 
+/*
+ * ICS trim stored in the reserved nonvolatile bytes (0x3FE FTRIM, 0x3FF TRIM).
+ * A scripted mass erase removes the factory value, so the image carries its own
+ * trim, found on the bench by measuring the SCI baud (scripts/gravar_demoem.ps1).
+ * Higher TRIM -> lower ICS frequency.
+ */
+#ifndef PRISMA_ICS_TRIM
+#define PRISMA_ICS_TRIM 0xA7U
+#endif
+#ifndef PRISMA_ICS_FTRIM
+#define PRISMA_ICS_FTRIM 0x00U
+#endif
+const byte prisma_nv_ftrim @0x000003FE = PRISMA_ICS_FTRIM;
+const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
+
 #define SCI3_SBR_19200_AT_19MHZ 65U
 #define ADC_WAIT_LIMIT 2000UL
 
@@ -192,12 +207,118 @@ static word ADC3_Read(byte channel, byte differential)
   return ADC3RA;
 }
 
-static void Delay(void)
-{
-  volatile unsigned long count;
+/*
+ * Burst acquisition: MTIM1 paces BURST_SAMPLES ticks at a fixed rate; on each
+ * tick the three ADC modules start together (AD4/ADC3, AD5/ADC1, AD6/ADC2),
+ * so the channels are simultaneous within the conversion time. The block is
+ * sent afterwards as one JSON line with 4 hex digits per value:
+ * {"type":"burst",...,"fs_mhz":F,"n":N,"ch":["ad4","ad5","ad6"],"data":"..."}.
+ *
+ * Bus ~19.923 MHz (FEI, 32.768 kHz x 1216 / 2). MTIM1 = bus / 128 with
+ * MOD = 77 -> 78 counts -> ~1995.5 Hz. fs_mhz is in millihertz and is only as
+ * accurate as the internal reference trim (check with the 50/60 Hz source).
+ */
+#define BURST_SAMPLES 500U
+#define BURST_MTIM_PS 7U                      /* 2^7 = 128. */
+#define BURST_MTIM_MOD 77U
+#define BURST_FS_MHZ 1995487UL                /* 19922944 / 128 / 78 * 1000. */
 
-  for (count = 0UL; count < 350000UL; ++count) {
+static word burst_data[BURST_SAMPLES][3];
+static word burst_seq;
+
+static void MTIM1_Init(void)
+{
+  MTIM1SC = 0x10U;                            /* TSTP: stop while configuring. */
+  MTIM1CLK = (byte)(0x00U | BURST_MTIM_PS);   /* CLKS = bus. */
+  MTIM1MOD = BURST_MTIM_MOD;
+  MTIM1SC = 0x20U;                            /* TRST: reset, run, no IRQ. */
+}
+
+static void MTIM1_WaitTick(void)
+{
+  while (MTIM1SC_TOF == 0U) {
   }
+  MTIM1SC = (byte)(MTIM1SC & (byte)~0x80U);   /* Read-then-write clears TOF. */
+}
+
+static byte ADC_WaitAll(void)
+{
+  volatile unsigned long wait = ADC_WAIT_LIMIT;
+  byte mask = 0U;
+
+  while (((ADC1SC1A_COCOA == 0U) || (ADC2SC1A_COCOA == 0U) || (ADC3SC1A_COCOA == 0U))
+         && (wait != 0UL)) {
+    --wait;
+  }
+  if (ADC1SC1A_COCOA == 0U) { mask = (byte)(mask | 0x01U); }
+  if (ADC2SC1A_COCOA == 0U) { mask = (byte)(mask | 0x02U); }
+  if (ADC3SC1A_COCOA == 0U) { mask = (byte)(mask | 0x04U); }
+  return mask;
+}
+
+static void Burst_Acquire(void)
+{
+  word i;
+
+  adc_timeout = 0U;
+  MTIM1SC = 0x20U;                            /* Restart the time base. */
+  for (i = 0U; i < BURST_SAMPLES; ++i) {
+    MTIM1_WaitTick();
+    ADC3SC1A = 4U;                            /* AD4, single-ended. */
+    ADC1SC1A = 5U;                            /* AD5. */
+    ADC2SC1A = 6U;                            /* AD6. */
+    adc_timeout = (byte)(adc_timeout | ADC_WaitAll());
+    burst_data[i][0] = ADC3RA;
+    burst_data[i][1] = ADC1RA;
+    burst_data[i][2] = ADC2RA;
+  }
+}
+
+static void SCI3_PutHex4(word value)
+{
+  static const char hex[] = "0123456789ABCDEF";
+  byte shift;
+
+  for (shift = 16U; shift != 0U; ) {
+    shift = (byte)(shift - 4U);
+    SCI3_PutChar(hex[(value >> shift) & 0x0FU]);
+  }
+}
+
+static void SCI3_PutULong(unsigned long value)
+{
+  char digits[10];
+  byte count = 0U;
+
+  do {
+    digits[count++] = (char)('0' + (value % 10UL));
+    value /= 10UL;
+  } while (value != 0UL);
+  while (count != 0U) {
+    SCI3_PutChar(digits[--count]);
+  }
+}
+
+static void Burst_Send(void)
+{
+  word i;
+  byte c;
+
+  SCI3_PutString("{\"type\":\"burst\",\"source\":\"DEMOEM\",\"seq\":");
+  SCI3_PutUnsigned(burst_seq);
+  SCI3_PutString(",\"fs_mhz\":");
+  SCI3_PutULong(BURST_FS_MHZ);
+  SCI3_PutString(",\"n\":");
+  SCI3_PutUnsigned(BURST_SAMPLES);
+  SCI3_PutString(",\"ch\":[\"ad4\",\"ad5\",\"ad6\"],\"adc_timeout_mask\":");
+  SCI3_PutUnsigned((word)adc_timeout);
+  SCI3_PutString(",\"data\":\"");
+  for (i = 0U; i < BURST_SAMPLES; ++i) {
+    for (c = 0U; c < 3U; ++c) {
+      SCI3_PutHex4(burst_data[i][c]);
+    }
+  }
+  SCI3_PutString("\"}\r\n");
 }
 
 void main(void)
@@ -213,26 +334,18 @@ void main(void)
   PTAD_PTAD5 = 0;
   PTADD_PTADD5 = 1;
 
-  for (;;) {
-    word ad4;
-    word ad5;
-    word ad6;
+  MTIM1_Init();
+  /* Settle each module on its fixed channel before the first burst. */
+  (void)ADC3_Read(4U, 0U);
+  (void)ADC1_Read(5U, 0U);
+  (void)ADC2_Read(6U, 0U);
+  SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"BURST MODE\"}\r\n");
 
-    adc_timeout = 0U;
+  for (;;) {
     /* One fixed input per ADC avoids high-impedance mux settling artifacts. */
-    ad4 = ADC3_Read(4U, 0U);
-    ad5 = ADC1_Read(5U, 0U);
-    ad6 = ADC2_Read(6U, 0U);
-    SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC RAW 3PH\",\"adc\":{\"ad4_raw\":");
-    SCI3_PutUnsigned(ad4);
-    SCI3_PutString(",\"ad5_raw\":");
-    SCI3_PutUnsigned(ad5);
-    SCI3_PutString(",\"ad6_raw\":");
-    SCI3_PutUnsigned(ad6);
-    SCI3_PutString("},\"adc_timeout_mask\":");
-    SCI3_PutUnsigned((word)adc_timeout);
-    SCI3_PutString("}\r\n");
+    Burst_Acquire();
+    Burst_Send();
+    ++burst_seq;
     PTAD_PTAD5 = (byte)!PTAD_PTAD5;
-    Delay();
   }
 }

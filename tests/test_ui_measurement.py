@@ -194,3 +194,21 @@ def test_painel_adc_mostra_valores_e_alertas(window):
     assert window.adc_table.rowCount() == 2
     assert window.adc_table.item(0, 0).text() == "dadp0_raw"
     assert "adc_cal_fail_mask = 2" in window.hardware_summary.text()
+
+
+def test_rajada_alimenta_osciloscopio_e_reinicia_com_seq_menor(window):
+    import numpy as np
+    from prisma.core.protocol import Sample, SampleBlock
+
+    def block(seq):
+        fs, n = 1995.487, 500
+        samples = tuple(Sample(seq * 10.0 + i / fs, *(30000 + 20000 * np.sin(2 * np.pi * 60 * i / fs + k * 2.094)
+                        for k in range(3))) for i in range(n))
+        return SampleBlock(seq, fs, ("ad4", "ad5", "ad6"), samples)
+
+    window._on_block(block(5))
+    window._draw_signals()
+    assert abs(window.last_analysis[0].frequency_hz - 60) < 1 if window.frequency_combo.currentIndex() == 2 else window.last_analysis
+    window._on_block(block(0))  # firmware reiniciou
+    assert window.buffer.arrays(duration_s=1.0)[0].size == 500
+    assert "Rajada 0" in window.statusBar().currentMessage()

@@ -1,12 +1,13 @@
 """Thread isolada para telemetria serial: não modifica firmware."""
 import threading
 from PySide6.QtCore import QThread, Signal
-from .protocol import HardwareStatus, Sample, parse_message
+from .protocol import HardwareStatus, Sample, SampleBlock, parse_message
 
 class SerialReader(QThread):
     connected = Signal()
     sample_received = Signal(object)
     status_received = Signal(object)
+    block_received = Signal(object)
     message = Signal(str)
     disconnected = Signal()
 
@@ -42,7 +43,7 @@ class SerialReader(QThread):
                             pending.clear()
                             try:
                                 sample = self.parser(line)
-                                if not isinstance(sample, (Sample, HardwareStatus)):
+                                if not isinstance(sample, (Sample, HardwareStatus, SampleBlock)):
                                     raise ValueError("Plugin retornou um tipo de mensagem inválido")
                             except (ValueError, UnicodeDecodeError, KeyError) as exc:
                                 invalid_count += 1
@@ -51,6 +52,8 @@ class SerialReader(QThread):
                                 continue
                             if isinstance(sample, Sample):
                                 self.sample_received.emit(sample)
+                            elif isinstance(sample, SampleBlock):
+                                self.block_received.emit(sample)
                             else:
                                 self.status_received.emit(sample)
                         elif not discarding:

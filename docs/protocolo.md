@@ -41,3 +41,17 @@ O leitor aceita linhas fragmentadas entre leituras e limita cada linha a 16384 b
 A análise aceita referência de 50 Hz, 60 Hz ou estimação automática entre 40 e 70 Hz, selecionada na aba Análise. As harmônicas ficam estritamente abaixo de Nyquist; THD e potências seguem os métodos em [instrumentação](instrumentacao.md).
 
 Dimensionar a capacidade da serial antes de definir a taxa do ADC: em 8N1, a vazão útil máxima aproximada é `baudrate / 10` bytes/s, sem folga. O JSON trifásico, principalmente com correntes, pode exceder 115200 baud em taxas baixas. Para aquisição de alta ordem harmônica, prever transporte mais eficiente e validar perdas/sincronismo; o gerador demo não atravessa a serial. Ver [orçamento da bancada](bancada-demoem.md).
+
+
+## Rajada de taxa fixa (DEMOEM)
+
+O firmware em rajada envia uma linha por bloco:
+
+```json
+{"type":"burst","source":"DEMOEM","seq":5,"fs_mhz":1995487,"n":500,"ch":["ad4","ad5","ad6"],"adc_timeout_mask":0,"data":"0000FA10..."}
+```
+
+- `fs_mhz`: taxa de amostragem em milihertz (inteiro). `n`: amostras por canal (2..4096).
+- `data`: `n × 3` palavras de 16 bits em hexadecimal maiúsculo, 4 dígitos cada, intercaladas por amostra (`ch[0] ch[1] ch[2]`, próxima amostra...).
+- Os três ADCs convertem juntos a cada tique do timer; os valores são contagens brutas, mapeadas para `va`, `vb` e `vc`.
+- O PRISMA posiciona cada bloco em `t = seq × 10 s + i / fs`, de modo que a análise use um bloco por vez. Um `seq` menor que o anterior (reinício do firmware) limpa o buffer.
