@@ -25,7 +25,12 @@ class Answer:
 def _normalize(text: str) -> str:
     text = unicodedata.normalize("NFKD", text.lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.sub(r"[^a-z0-9%]+", " ", text).strip()
+    text = re.sub(r"[^a-z0-9%]+", " ", text).strip()
+    # Fala transcrita: "fase bê", "fase cê"/"fase sê" (sem acento: be, ce, se).
+    text = re.sub(r"\b(fases?|linha)\s+be\b", r"\1 b", text)
+    text = re.sub(r"\b(fases?|linha)\s+[cs]e\b", r"\1 c", text)
+    text = re.sub(r"\b([abc])\s+e\s+be\b", r"\1 e b", text)  # "fases a e bê"
+    return re.sub(r"\b([abc])\s+e\s+[cs]e\b", r"\1 e c", text)
 
 
 def _number(value: float, decimals: int) -> str:

@@ -19,6 +19,8 @@ dependencies = [
 ]
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+# Perguntas por voz no painel touch (reconhecimento offline em português).
+voz = ["vosk>=0.3.45,<0.4"]
 [project.scripts]
 prisma = "prisma.main:main"
 [project.entry-points."prisma.protocols"]

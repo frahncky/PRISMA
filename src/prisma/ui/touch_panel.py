@@ -71,7 +71,7 @@ class Tile(QPushButton):
 
 class TouchPanel(QWidget):
     def __init__(self, source: MeasurementSource, parent: QWidget | None = None,
-                 speaker: Callable[[str], None] | None = None) -> None:
+                 speaker: Callable[[str], None] | None = None, listener=None) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.setObjectName("touchPanel")
         self.setWindowTitle("PRISMA · Painel")
@@ -80,6 +80,14 @@ class TouchPanel(QWidget):
         self._speech = None
         self.speaker = speaker or self._speak_with_qt
         self.last_answer = ""
+        if listener is None:
+            from prisma.ui.microphone import MicListener
+            listener = MicListener(self)
+        self.listener = listener
+        self.listener.partial.connect(lambda text: self.answer_label.setText(f"Ouvindo… {text}"))
+        self.listener.final.connect(self._heard)
+        self.listener.failed.connect(self._mic_failed)
+        self.listener.listening.connect(self._mic_state)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(24, 18, 24, 18)
@@ -146,6 +154,12 @@ class TouchPanel(QWidget):
         self.input.setPlaceholderText("Pergunte: qual a corrente da fase A?")
         self.input.returnPressed.connect(self._ask_typed)
         ask_row.addWidget(self.input, stretch=1)
+        self.mic_button = QPushButton("Falar")
+        self.mic_button.setObjectName("touchButton")
+        self.mic_button.setCheckable(True)
+        self.mic_button.setToolTip("Toque e faça a pergunta em voz alta")
+        self.mic_button.clicked.connect(self.toggle_listening)
+        ask_row.addWidget(self.mic_button)
         ask = QPushButton("Perguntar")
         ask.setObjectName("touchButton")
         ask.clicked.connect(self._ask_typed)
@@ -175,6 +189,32 @@ class TouchPanel(QWidget):
         if self.voice_button.isChecked():
             self.speaker(self.last_answer)
         return self.last_answer
+
+    def toggle_listening(self) -> None:
+        if self.listener.active:
+            self.listener.cancel()
+            self.answer_label.setText("Escuta cancelada.")
+            return
+        if self._speech is not None:
+            self._speech.stop()  # não ouvir a própria resposta
+        if self.listener.start():
+            self.answer_label.setText("Ouvindo… pergunte, por exemplo: qual a corrente da fase A?")
+
+    def _heard(self, text: str) -> None:
+        if not text:
+            self.answer_label.setText("Não ouvi nenhuma pergunta. Toque em Falar e tente de novo.")
+            return
+        self.input.setText(text)
+        self.ask(text)
+        self.input.clear()
+
+    def _mic_state(self, on: bool) -> None:
+        self.mic_button.setChecked(on)
+        self.mic_button.setText("Ouvindo…" if on else "Falar")
+
+    def _mic_failed(self, reason: str) -> None:
+        self.mic_button.setChecked(False)
+        self.answer_label.setText(reason)
 
     def _speak_with_qt(self, text: str) -> None:
         try:
@@ -241,6 +281,7 @@ class TouchPanel(QWidget):
 
     def closeEvent(self, event) -> None:
         self.timer.stop()
+        self.listener.cancel()
         if self._speech is not None:
             self._speech.stop()
         super().closeEvent(event)
