@@ -308,3 +308,16 @@ def test_rajadas_usam_fase_a_como_referencia_dos_fasores(window):
         text = window.details.text()
         assert "∠ 0.0°" in text and ("∠ -120.0°" in text or "∠ -119.9°" in text or "∠ -120.1°" in text)
     assert window.phasor_reference.currentIndex() == 1
+
+
+def test_bloco_sem_sinal_mostra_aviso_e_rms_em_vez_de_apagar(window):
+    from prisma.core.protocol import Sample, SampleBlock
+
+    fs = 1995.5
+    samples = tuple(Sample(i / fs, 0.0, 0.0, 9000.0 if 100 <= i < 110 else 0.0) for i in range(500))
+    window._on_block(SampleBlock(311, fs, ("ad4", "ad5", "ad6"), samples))
+    window._draw_signals()
+    assert window.frequency_label.text() == "Sem sinal"
+    assert "Fases sem sinal: A, B" in window.details.text()
+    assert window.metric_labels["A"].text().startswith("0.000")
+    assert float(window.metric_labels["C"].text().split()[0]) > 0

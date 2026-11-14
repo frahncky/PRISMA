@@ -88,3 +88,15 @@ def test_ganho_de_calibracao_por_referencia(tmp_path):
     cal = Calibration({"va": {"gain": 2.0, "offset": 0.0}}, "Bancada")
     cal.save(tmp_path / "c.json")
     assert Calibration.load(tmp_path / "c.json").channels == cal.channels
+
+
+def test_frequencia_automatica_usa_canal_com_sinal_quando_fase_a_zera():
+    import numpy as np
+    from prisma.core.measurement import analyze
+
+    t = np.arange(500) / 1995.5
+    values = np.column_stack([np.zeros_like(t), np.zeros_like(t), 20000 * np.sin(2 * np.pi * 51.9 * t)])
+    result = analyze(t, values, fundamental_hz=None)
+    assert abs(result.frequency_hz - 51.9) < 0.1
+    assert result.rms["A"] == 0 and result.rms["C"] > 10000
+    assert result.thd_percent is None

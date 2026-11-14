@@ -105,7 +105,16 @@ def analyze(t: np.ndarray, values: np.ndarray, fundamental_hz: float | None = 60
     if np.any(intervals <= 0):
         raise ValueError("Amostras fora da ordem temporal")
     if fundamental_hz is None:
-        fundamental_hz = estimate_frequency(t, values[:, 0])
+        # Usa o canal com mais sinal: uma fase zerada não deve impedir a análise das demais.
+        errors = []
+        for index in np.argsort(-np.ptp(values, axis=0)):
+            try:
+                fundamental_hz = estimate_frequency(t, values[:, index])
+                break
+            except ValueError as exc:
+                errors.append(exc)
+        else:
+            raise errors[0]
     if (not np.isfinite(fundamental_hz) or fundamental_hz <= 0
             or isinstance(max_harmonic, bool) or not isinstance(max_harmonic, int) or max_harmonic <= 0):
         raise ValueError("Frequência e número inteiro de harmônicas devem ser positivos")

@@ -679,7 +679,23 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 label.setText("--- V")
             self.phasor.clear()
             self.harmonics.clear()
-            self.details.setText(f"Análise indisponível: {exc}")
+            weak = "estimar frequência" in str(exc) or "instável" in str(exc)
+            if weak:
+                # Sem ciclos suficientes: o RMS por fase ainda vale e ajuda a ver qual canal sumiu.
+                rms = np.sqrt(np.mean((values - values.mean(axis=0)) ** 2, axis=0))
+                fmt = "{:.3f} V" if self._pin_volts() else "{:.2f} V"
+                for label, value in zip(self.metric_labels.values(), rms):
+                    label.setText(fmt.format(value))
+                silent = [p for p, v in zip("ABC", np.ptp(values, axis=0)) if v < 1e-6 or v < 0.02 * np.ptp(values).max()]
+                self.frequency_label.setText("Sem sinal")
+                self.frequency_hint.setText("ciclos insuficientes no bloco")
+                self.details.setText(
+                    f"<b style='color:{theme.WARNING}'>Sinal ausente ou fraco</b><br>"
+                    f"<span style='color:{theme.MUTED}'>Fases sem sinal: {', '.join(silent) or 'nenhuma'}. "
+                    f"Não há ciclos suficientes para medir frequência, fasores e harmônicas. "
+                    f"Na DEMOEM isso ocorre quando o gerador QE8 corta as saídas (por exemplo, ao girar os potenciômetros).</span>")
+            else:
+                self.details.setText(f"Análise indisponível: {exc}")
             return
         self._last_frequency = result.frequency_hz
         self.frequency_label.setText(f"{result.frequency_hz:.2f} Hz")
