@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "name": "DEMOEM EM256 Demo — CodeWarrior 6.3 (build validado em linha de comando)",
+  "target": "MCF51EM256 / ColdFire V1",
+  "directory": "../../firmware/codewarrior/EM256 Demo",
+  "build": ["C:/Program Files (x86)/Freescale/CodeWarrior for Microcontrollers V6.3/bin/CmdIDE.exe", "EM256 Demo.mcp", "/b", "/q"],
+  "artifact": "bin/Project.abs",
+  "map_file": "bin/Project.abs.xMAP",
+  "flash": [],
+  "debugger": [],
+  "remote": "localhost:7224"
+}

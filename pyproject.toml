@@ -27,3 +27,6 @@ csv-trifasico-v1 = "prisma.plugins.csv_protocol:parse_message"
 where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Pasta temporária local: evita o tmp do usuário Windows sem permissão.
+addopts = "--basetemp=.pytest_tmp"
+cache_dir = ".pytest_tmp_cache"

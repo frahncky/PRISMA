@@ -92,3 +92,14 @@ def test_gdb_mi_comandos_de_breakpoint_e_registradores(app, tmp_path):
     assert '-data-list-register-values x' in text
     with pytest.raises(ValueError):
         session.breakpoint('main.c:42\n-exec-continue')
+
+
+def test_projeto_demoem_codewarrior_carrega():
+    from pathlib import Path
+    from prisma.core.toolchain import Project
+
+    root = Path(__file__).resolve().parents[1]
+    project = Project.load(root / "examples/projects/demoem-codewarrior.json")
+    assert project.build[1:] == ["EM256 Demo.mcp", "/b", "/q"]
+    assert project.artifact.name == "Project.abs"
+    assert project.flash == [] and project.debugger == []
