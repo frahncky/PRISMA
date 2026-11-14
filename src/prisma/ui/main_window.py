@@ -466,6 +466,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.mode_label.setStyleSheet(theme.pill_style(kind))
         self.statusBar().showMessage(label.capitalize())
 
+    def select_port(self, port: str) -> bool:
+        index = self.port_combo.findData(port)
+        if index >= 0:
+            self.port_combo.setCurrentIndex(index)
+        return index >= 0
+
     def refresh_ports(self) -> None:
         from serial.tools import list_ports
         selected = self.port_combo.currentData()
@@ -499,6 +505,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 "Nenhuma porta COM detectada. Confirme o driver e a configuração serial da placa."
             )
             return
+        self.settings.setValue("last_port", port)
         self.stop_recording()
         self.buffer.clear()
         self._invalidate_analysis()

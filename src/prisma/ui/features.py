@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSettings, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
@@ -25,6 +25,7 @@ from prisma.core.toolchain import CommandRunner, DebugSession, Project, artifact
 class FeaturesMixin:
     def _build_features(self) -> None:
         self.calibration = Calibration()
+        self.settings = QSettings("PRISMA", "PRISMA")
         self.device_profile = DeviceProfile("DEMOEM / PRISMA JSON")
         self.sample_parser = load_protocol(self.device_profile.protocol)
         self.project = None
@@ -277,16 +278,20 @@ class FeaturesMixin:
             QMessageBox.information(self, "Perfil", "Desconecte a serial antes de trocar o perfil.")
             return
         try:
-            profile = DeviceProfile.load(Path(filename))
-            parser = load_protocol(profile.protocol)
+            self.apply_profile(Path(filename))
         except (OSError, ValueError, TypeError, ImportError) as exc:
             QMessageBox.critical(self, "Perfil inválido", str(exc))
-            return
+
+    def apply_profile(self, path: Path) -> None:
+        """Carrega um perfil de dispositivo e o memoriza para a próxima sessão."""
+        profile = DeviceProfile.load(path)
+        parser = load_protocol(profile.protocol)
         self.device_profile = profile
         self.sample_parser = parser
         self.board_label.setText(profile.name)
         self.profile_label.setText(f"{profile.name} · {profile.baudrate} baud")
-        self._log(f"Perfil carregado: {profile.name}; protocolo {profile.protocol}")
+        self.settings.setValue("last_profile", str(path.resolve()))
+        self._log(f"Perfil carregado: {profile.name} · {profile.baudrate} baud · protocolo {profile.protocol}")
 
     def _calibration_base_gains(self) -> dict[str, float]:
         """Ganho que leva a entrada do canal ao valor exibido hoje."""

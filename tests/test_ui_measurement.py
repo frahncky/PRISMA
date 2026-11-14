@@ -12,9 +12,13 @@ from prisma.ui.main_window import MainWindow
 
 
 @pytest.fixture
-def window(app):
+def window(app, tmp_path):
+    from PySide6.QtCore import QSettings
+
     widget = MainWindow()
     widget.timer.stop()
+    # Nunca tocar nas configurações reais do usuário.
+    widget.settings = QSettings(str(tmp_path / "prisma-test.ini"), QSettings.Format.IniFormat)
     yield widget
     widget.close()
 
@@ -261,3 +265,16 @@ def test_calibrar_com_multimetro_ajusta_rms_exibido(window, tmp_path):
     window._draw_signals()
     assert abs(window.last_analysis[0].rms["A"] - 220.0) < 1.0
     assert abs(window.last_analysis[0].rms["B"] - 127.0) < 1.0
+
+
+def test_perfil_e_porta_sao_memorizados(window, tmp_path):
+    from pathlib import Path
+    from prisma.main import parse_args
+
+    profile = Path(__file__).resolve().parents[1] / "examples/profiles/demoem-ch340.json"
+    window.apply_profile(profile)
+    assert window.settings.value("last_profile") == str(profile)
+    assert "19200" in window.profile_label.text()
+    assert not window.select_port("COM_INEXISTENTE")
+    args = parse_args(["--port", "COM4", "--profile", str(profile), "--connect", "--screen", "2"])
+    assert (args.port, args.connect, args.screen) == ("COM4", True, 2)
