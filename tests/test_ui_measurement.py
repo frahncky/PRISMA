@@ -339,3 +339,16 @@ def test_osciloscopio_com_disparo_comeca_na_subida(window):
     window.trigger_check.setChecked(False)
     window._draw_signals()
     assert window.curves["A"].getData()[0][-1] == 0.0
+
+
+def test_rajadas_gravadas_com_tempo_real_crescente(window):
+    from prisma.core.protocol import Sample, SampleBlock
+
+    window.device_profile = type(window.device_profile)("teste", baudrate=115200)
+    block = SampleBlock(0, 2000.0, ("ad4", "ad5", "ad6"), tuple(Sample(i / 2000, 1.0, 2.0, 3.0) for i in range(500)))
+    first = window._block_record_times(block, arrival=100.0)
+    second = window._block_record_times(block, arrival=100.8)
+    assert abs(first[0] + (6150 * 10 / 115200 + 0.25)) < 1e-9  # chegada - transmissão - duração
+    assert abs((first[1] - first[0]) - 0.0005) < 1e-12
+    assert second[0] > first[-1]
+    assert abs((second[0] - first[0]) - 0.8) < 1e-9

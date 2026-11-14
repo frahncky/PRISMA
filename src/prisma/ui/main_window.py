@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import json
+import time
+from dataclasses import replace
 import sqlite3
 import numpy as np
 import pyqtgraph as pg
@@ -71,6 +73,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.setStyleSheet(STYLE)
         self.setWindowIcon(app_icon())
         self.paused = False
+        self._session_t0: float | None = None
+        self._last_record_t = float("-inf")
         self.raw_counts = False
         pg.setConfigOptions(antialias=True, background=theme.PLOT_BG, foreground=theme.MUTED)
         self.buffer = SignalBuffer()
@@ -514,6 +518,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             )
             return
         self.settings.setValue("last_port", port)
+        self._session_t0, self._last_record_t = None, float("-inf")
         self.stop_recording()
         self.buffer.clear()
         self._invalidate_analysis()
@@ -542,7 +547,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._set_link_status(f"{port} conectada", theme.SUCCESS)
         self._set_mode(f"SERIAL {port} — AGUARDANDO AMOSTRAS")
 
-    def _on_sample(self, sample: Sample) -> None:
+    def _on_sample(self, sample: Sample, record_t: float | None = None) -> None:
         try:
             sample = self.calibration.apply(sample)
             self.buffer.add(sample)
@@ -551,10 +556,28 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self._log(f"Amostra ignorada: {exc}")
                 self._invalid_sample_logs += 1
             return
-        self._record_sample(sample)
+        self._record_sample(sample if record_t is None else replace(sample, t=record_t))
         if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
             port = self.reader.port if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
+
+    def _block_record_times(self, block, arrival: float | None = None) -> list[float]:
+        """Tempo real (s desde o início da sessão) de cada amostra de uma rajada.
+
+        O bloco chega ao fim da transmissão; o início da aquisição é a chegada menos
+        a transmissão (≈ 12 caracteres por amostra + cabeçalho, 10 bits por caractere)
+        e menos a duração da própria rajada. Dentro do bloco o passo é 1/fs exato.
+        """
+        arrival = time.monotonic() if arrival is None else arrival
+        if self._session_t0 is None:
+            self._session_t0 = arrival
+        n = len(block.samples)
+        transmission = (n * 12 + 150) * 10 / max(1, self.device_profile.baudrate)
+        start = arrival - self._session_t0 - transmission - n / block.fs_hz
+        start = max(start, self._last_record_t + 1 / block.fs_hz)
+        times = [start + i / block.fs_hz for i in range(n)]
+        self._last_record_t = times[-1]
+        return times
 
     def _pin_volts(self) -> bool:
         """Rajada sem calibração: valores convertidos para tensão no pino do ADC."""
@@ -586,10 +609,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
         scale = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else None
-        for sample in block.samples:
+        starts = self._block_record_times(block)
+        for sample, record_t in zip(block.samples, starts):
             if scale is not None:
                 sample = Sample(sample.t, sample.va * scale, sample.vb * scale, sample.vc * scale)
-            self._on_sample(sample)
+            self._on_sample(sample, record_t)
         names = "/".join(block.channels)
         warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
         unit = f"tensão no pino ADC (Vref {ADC_VREF_V} V)" if scale else "calibração ativa"
