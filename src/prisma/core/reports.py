@@ -81,6 +81,7 @@ footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6e
 <div class="kpi"><span>Frequência</span><b>{result.frequency_hz:.3f} Hz</b></div>
 <div class="kpi"><span>THD fase A</span><b>{thd}</b><span>{harmonic_range.strip()}</span></div>
 <div class="kpi"><span>Desequilíbrio</span><b>{unbalance}</b></div>
+<div class="kpi"><span>Ordem das fases</span><b>{(seq.rotation if seq else None) or "indefinida"}</b></div>
 <div class="kpi"><span>Janelamento</span><b>{escape(result.window)}</b></div>
 </div>
 {figures}

@@ -817,6 +817,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         seq = sequence_components(result.phasors)
         if seq.unbalance_percent is not None:
             rows.append(("Sequência +/−/0", f"{seq.positive:.3f} / {seq.negative:.3f} / {seq.zero:.3f} V"))
+            order = {"ABC": "ABC (direta)", "ACB": f"<span style='color:{theme.WARNING}'>ACB (inversa)</span>"}
+            rows.append(("Ordem das fases", order.get(seq.rotation, "indefinida")))
             rows.append(("Desequilíbrio V2/V1", f"{seq.unbalance_percent:.1f} %"))
         rows.append(("THD fase A", thd_text))
         rows.append(("Origem", source))

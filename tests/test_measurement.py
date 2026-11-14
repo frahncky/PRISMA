@@ -122,3 +122,12 @@ def test_line_voltages_balanced_are_sqrt3_phase():
     for v in lines.values():
         assert abs(abs(v) - 127 * 3 ** 0.5) < 1e-9
     assert abs(cmath.phase(lines["AB"]) - cmath.pi / 6) < 1e-9
+
+
+def test_phase_rotation():
+    import cmath
+    from prisma.core.measurement import sequence_components
+    a = cmath.rect(1, -2 * cmath.pi / 3)
+    assert sequence_components({"A": 1, "B": a, "C": a * a}).rotation == "ABC"
+    assert sequence_components({"A": 1, "B": a * a, "C": a}).rotation == "ACB"
+    assert sequence_components({"A": 1, "B": 1, "C": 1}).rotation is None

@@ -171,6 +171,13 @@ class Sequence:
     zero: float
 
     @property
+    def rotation(self) -> str | None:
+        """'ABC' (direta) ou 'ACB' (inversa); None se nenhuma predomina."""
+        if max(self.positive, self.negative) < 1e-12 or abs(self.positive - self.negative) < 0.1 * max(self.positive, self.negative):
+            return None
+        return "ABC" if self.positive > self.negative else "ACB"
+
+    @property
     def unbalance_percent(self) -> float | None:
         """Desequilíbrio de tensão (IEC 61000-4-30): |V2| / |V1| × 100."""
         return 100 * self.negative / self.positive if self.positive > 1e-12 else None
