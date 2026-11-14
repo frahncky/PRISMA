@@ -33,7 +33,8 @@ Objetivo: dispensar o CH340 usando a serial virtual do Embedded Multilink da pr�
 
 | Item | Resultado |
 | --- | --- |
-| COM criada pelo driver PEmicro | Pendente |
+| COM criada pelo driver PEmicro | **Não** (14/11/2026): com J7/J8 habilitados, `MI_00`/`MI_01` enumeram na classe Jungo, driver Jungo 12.7.0.0 de 28/11/2017; nenhuma porta em `Win32_SerialPort`. Pendente repetir após atualizar os PEmicro Windows USB Drivers |
+| Canal virtual pelo P&E Terminal Utility | Pendente (utilitário não instalado em `C:\PEMicro`) |
 | Telemetria recebida no PRISMA | Pendente |
 | Regravar e reconectar sem trocar cabo | Pendente |
 
