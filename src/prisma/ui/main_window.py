@@ -23,7 +23,7 @@ from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
 from prisma.core.history import SqliteRecorder
 from prisma.ui import theme
-from prisma.ui.highlighter import CHighlighter
+from prisma.ui.editor import CodeEditor, EditorPanel
 from prisma.ui.features import FeaturesMixin
 
 COLORS = theme.PHASE
@@ -419,12 +419,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         editor_bar.addWidget(self.btn_open)
         editor_bar.addWidget(self.btn_save)
         editor_layout.addLayout(editor_bar)
-        self.editor = QPlainTextEdit(FIRMWARE_SKELETON)
-        self.editor.setObjectName("code")
-        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().horizontalAdvance(" "))
-        self.highlighter = CHighlighter(self.editor.document())
-        editor_layout.addWidget(self.editor)
+        self.editor = CodeEditor(FIRMWARE_SKELETON)
+        self.editor_panel = EditorPanel(self.editor)
+        editor_layout.addWidget(self.editor_panel)
         self.editor_page = editor_page
         self.tabs.addTab(editor_page, "Firmware C")
         self._add_nav("Instrumentação", dashboard, "scope")

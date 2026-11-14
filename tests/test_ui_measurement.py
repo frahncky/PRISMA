@@ -278,3 +278,18 @@ def test_perfil_e_porta_sao_memorizados(window, tmp_path):
     assert not window.select_port("COM_INEXISTENTE")
     args = parse_args(["--port", "COM4", "--profile", str(profile), "--connect", "--screen", "2"])
     assert (args.port, args.connect, args.screen) == ("COM4", True, 2)
+
+
+def test_editor_localiza_substitui_e_numera_linhas(window):
+    window.editor.setPlainText("int a;\nint b;\nfloat c;\n")
+    assert window.editor.gutter_width() > 0
+    assert window.editor.find_text("int") and window.editor.textCursor().selectedText() == "int"
+    assert window.editor.find_text("float")
+    assert not window.editor.find_text("double")
+    assert window.editor.replace_all("int", "long") == 2
+    assert window.editor.toPlainText().count("long") == 2
+    panel = window.editor_panel
+    panel.open_bar(True)
+    assert panel.bar.isVisibleTo(panel) and panel.replace_edit.isVisibleTo(panel)
+    panel.close_bar()
+    assert not panel.bar.isVisibleTo(panel)

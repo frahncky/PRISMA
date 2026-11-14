@@ -98,6 +98,8 @@ QPushButton#ghost {{ background: transparent; border: none; color: {MUTED}; padd
 QPushButton#ghost:hover {{ color: {TEXT}; }}
 QPushButton#ghost:checked {{ color: {ACCENT}; }}
 
+QLineEdit, QDoubleSpinBox {{ background: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: 8px; padding: 6px 10px; selection-background-color: #1c3552; }}
+QLineEdit:focus, QDoubleSpinBox:focus {{ border-color: {ACCENT}; }}
 QComboBox {{ background: {SURFACE_2}; border: 1px solid {BORDER}; padding: 6px 10px; border-radius: 8px; min-height: 18px; }}
 QComboBox:hover {{ border-color: #2c3f5e; }}
 QComboBox::drop-down {{ border: none; width: 22px; }}
