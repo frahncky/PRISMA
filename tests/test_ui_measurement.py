@@ -321,3 +321,21 @@ def test_bloco_sem_sinal_mostra_aviso_e_rms_em_vez_de_apagar(window):
     assert "Fases sem sinal: A, B" in window.details.text()
     assert window.metric_labels["A"].text().startswith("0.000")
     assert float(window.metric_labels["C"].text().split()[0]) > 0
+
+
+def test_osciloscopio_com_disparo_comeca_na_subida(window):
+    import numpy as np
+    from prisma.core.protocol import Sample, SampleBlock
+
+    fs = 1995.5
+    for seq, offset in ((0, 0.0), (1, 0.0071)):
+        samples = tuple(Sample(seq * 10.0 + i / fs, 20000 * np.sin(2 * np.pi * 51 * (i / fs + offset)), 0.0, 0.0)
+                        for i in range(500))
+        window._on_block(SampleBlock(seq, fs, ("ad4", "ad5", "ad6"), samples))
+        window._draw_signals()
+        x, y = window.curves["A"].getData()
+        assert x[0] >= 0 and x[0] < 1 / fs
+        assert y[0] > 0 and y[3] > y[0]  # começa subindo, logo após o nível de disparo
+    window.trigger_check.setChecked(False)
+    window._draw_signals()
+    assert window.curves["A"].getData()[0][-1] == 0.0

@@ -10,7 +10,7 @@ import pyqtgraph as pg
 from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
-    QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
+    QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTabWidget,
     QVBoxLayout, QWidget, QGridLayout,
     QTableWidgetItem,
@@ -368,6 +368,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
         scope_title.setObjectName("panelTitle")
         scope_head.addWidget(scope_title)
         scope_head.addStretch(1)
+        self.trigger_check = QCheckBox("Disparo")
+        self.trigger_check.setChecked(True)
+        self.trigger_check.setToolTip("Alinha a tela na subida do canal com mais sinal, mantendo a forma de onda parada.")
+        scope_head.addWidget(self.trigger_check)
+        scope_head.addSpacing(10)
         scope_head.addWidget(QLabel("Janela"))
         self.cycles_combo = QComboBox()
         self.cycles_combo.addItems(["2 ciclos", "4 ciclos", "8 ciclos", "250 ms"])
@@ -664,12 +669,19 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if t.size < 12:
             self.last_analysis = None
             return
-        x = t - t[-1]
         span = self._scope_span()
-        keep = x >= -span
+        trigger = self._trigger_index(t, values, span)
+        if trigger is None:
+            x = t - t[-1]
+            keep = x >= -span
+            self.wave.setXRange(-span, 0.0, padding=0)
+        else:
+            # Disparo na subida do canal de referência: a forma de onda fica parada na tela.
+            x = t - t[trigger]
+            keep = (x >= 0) & (x <= span)
+            self.wave.setXRange(0.0, span, padding=0)
         for i, phase in enumerate(("A", "B", "C")):
             self.curves[phase].setData(x[keep], values[keep, i])
-        self.wave.setXRange(-span, 0.0, padding=0)
         if (t[-1] - t[0]) < 0.12:
             return
         try:
@@ -781,6 +793,19 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))
+
+    def _trigger_index(self, t: np.ndarray, values: np.ndarray, span: float) -> int | None:
+        """Primeira subida do canal com mais sinal que ainda deixa `span` segundos à frente."""
+        if not self.trigger_check.isChecked():
+            return None
+        channel = int(np.argmax(np.ptp(values, axis=0)))
+        y = values[:, channel] - values[:, channel].mean()
+        if np.ptp(y) <= 0:
+            return None
+        level = 0.1 * np.ptp(y)  # histerese contra ruído e degraus
+        rising = np.flatnonzero((y[:-1] < level) & (y[1:] >= level)) + 1
+        rising = rising[t[rising] + span <= t[-1]]
+        return int(rising[0]) if rising.size else None
 
     def _scope_span(self) -> float:
         index = self.cycles_combo.currentIndex()
