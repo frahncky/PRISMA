@@ -7,11 +7,12 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from prisma.core.calibration import Calibration
+from prisma.ui import theme
 from prisma.core.devices import DeviceProfile, load_protocol, serial_inventory
 from prisma.core.history import export_session, list_sessions
 from prisma.core.reports import write_report
@@ -137,6 +138,7 @@ class FeaturesMixin:
         hw_layout.addWidget(self._section("ÚLTIMA MENSAGEM DE ESTADO (JSON)"))
         self.hardware_view = QPlainTextEdit()
         self.hardware_view.setReadOnly(True)
+        self.hardware_view.setObjectName("log")
         self.hardware_view.setMaximumHeight(190)
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         hw_layout.addWidget(self.hardware_view)
@@ -147,29 +149,51 @@ class FeaturesMixin:
         layout.setContentsMargins(20, 16, 20, 12)
         layout.setSpacing(10)
         row = QHBoxLayout()
+        row.setSpacing(8)
+        open_project = QPushButton("Abrir projeto…")
+        open_project.setIcon(theme.icon("open"))
+        open_project.clicked.connect(self.load_project)
+        cancel = QPushButton("Cancelar")
+        cancel.clicked.connect(self.runner.cancel)
+        self.btn_compile.setObjectName("primary")
+        for widget in (open_project, self.btn_compile, self.btn_flash, cancel):
+            row.addWidget(widget)
+        row.addStretch(1)
+        debug = QToolButton()
+        debug.setText("Depuração GDB")
+        debug.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        debug.setToolTip("Requer GDB e servidor remoto compatíveis com o alvo (não disponíveis para ColdFire V1 na bancada).")
+        menu = QMenu(debug)
         for label, handler in (
-            ("Abrir projeto…", self.load_project), ("Cancelar operação", self.runner.cancel),
             ("Iniciar depuração", self.start_debug), ("Breakpoint…", self.add_breakpoint),
             ("Registradores", lambda: self.debug_command("registers")),
             ("Continuar", lambda: self.debug_command("-exec-continue")),
             ("Pausar", lambda: self.debug_command("-exec-interrupt --all")),
             ("Encerrar depuração", self.debugger.close),
         ):
-            button = QPushButton(label)
-            button.clicked.connect(handler)
-            row.addWidget(button)
-        row.insertWidget(1, self.btn_compile)
-        row.insertWidget(2, self.btn_flash)
+            menu.addAction(label, handler)
+        debug.setMenu(menu)
+        row.addWidget(debug)
         layout.addLayout(row)
-        self.project_label = QLabel("Abra um projeto PRISMA para configurar compilador, artefato e ferramentas.")
+        project_card = QFrame()
+        project_card.setObjectName("card")
+        project_layout = QVBoxLayout(project_card)
+        project_layout.setContentsMargins(16, 12, 16, 12)
+        project_layout.addWidget(self._section("PROJETO"))
+        self.project_label = QLabel("Nenhum projeto aberto. Use “Abrir projeto…” e escolha um JSON em examples/projects.")
         self.project_label.setWordWrap(True)
-        layout.addWidget(self.project_label)
+        self.project_label.setTextFormat(Qt.TextFormat.RichText)
+        project_layout.addWidget(self.project_label)
+        layout.addWidget(project_card)
+        layout.addWidget(self._section("SAÍDA DA TOOLCHAIN"))
         self.build_view = QPlainTextEdit()
         self.build_view.setReadOnly(True)
         self.build_view.setMaximumBlockCount(5000)
+        self.build_view.setObjectName("log")
         layout.addWidget(self.build_view)
         self.map_view = QPlainTextEdit()
         self.map_view.setReadOnly(True)
+        self.map_view.setObjectName("log")
         layout.addWidget(self._section("MAPA DE MEMÓRIA"))
         layout.addWidget(self.map_view)
         self.tabs.addTab(development, "Build / depuração")
@@ -366,8 +390,12 @@ class FeaturesMixin:
             QMessageBox.critical(self, "Projeto inválido", str(exc))
             return
         self.project, self.build_digest = project, None
-        self.project_label.setText(f"{project.name} · alvo {project.target}\n{project.directory}\n"
-            f"Build: {project.build}\nGravação: {project.flash}\nDepurador: {project.debugger}")
+        def cmd(parts):
+            return " ".join(parts) if parts else "<i>não configurado</i>"
+        rows = (("Nome", project.name), ("Alvo", project.target), ("Pasta", str(project.directory)),
+                ("Build", cmd(project.build)), ("Gravação", cmd(project.flash)), ("Depurador", cmd(project.debugger)))
+        self.project_label.setText("<table cellpadding='2'>" + "".join(
+            f"<tr><td style='color:#8a9ab0; padding-right:14px'>{k}</td><td>{v}</td></tr>" for k, v in rows) + "</table>")
         self.btn_compile.setEnabled(True)
         self.btn_flash.setEnabled(False)
         self.build_view.clear()

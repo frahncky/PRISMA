@@ -90,6 +90,7 @@ QPushButton:pressed {{ background: #14203a; }}
 QPushButton:disabled {{ color: {SUBTLE}; background: {SURFACE}; border-color: {BORDER}; }}
 QPushButton#primary {{ background: #0f7f99; border-color: #19a3bf; color: #ffffff; font-weight: 600; }}
 QPushButton#primary:hover {{ background: #1294b3; }}
+QPushButton#primary:disabled {{ background: {SURFACE}; border-color: {BORDER}; color: {SUBTLE}; font-weight: 400; }}
 QPushButton#primary[connected="true"] {{ background: #1d4a36; border-color: #2f7a57; color: #c8f5dc; }}
 QPushButton#icon {{ padding: 6px; min-width: 20px; }}
 QPushButton#icon:checked {{ background: #3a2c10; border-color: #b8862b; }}
@@ -104,6 +105,11 @@ QComboBox QAbstractItemView {{ background: {SURFACE_2}; border: 1px solid {BORDE
 QTabWidget::pane {{ border: none; }}
 QPlainTextEdit {{ background: #080d16; color: #d7e3f0; border: 1px solid {BORDER}; border-radius: 10px; padding: 8px;
     selection-background-color: #1c3552; }}
+QPlainTextEdit#code {{ font-family: 'Cascadia Mono', Consolas, monospace; font-size: 13px; }}
+QPlainTextEdit#log {{ font-family: 'Cascadia Mono', Consolas, monospace; font-size: 11px; }}
+QToolButton {{ background: {SURFACE_2}; border: 1px solid {BORDER}; border-radius: 8px; padding: 7px 26px 7px 12px; }}
+QToolButton:hover {{ background: #1c2c47; }}
+QToolButton::menu-indicator {{ subcontrol-position: right center; right: 6px; }}
 QTableWidget {{ background: {SURFACE}; alternate-background-color: #131e2f; gridline-color: {BORDER};
     border: 1px solid {BORDER}; border-radius: 10px; }}
 QHeaderView::section {{ background: {SURFACE_2}; color: {MUTED}; border: none; padding: 7px; font-weight: 600; }}

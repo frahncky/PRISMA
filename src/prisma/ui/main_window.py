@@ -23,6 +23,7 @@ from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
 from prisma.core.history import SqliteRecorder
 from prisma.ui import theme
+from prisma.ui.highlighter import CHighlighter
 from prisma.ui.features import FeaturesMixin
 
 COLORS = theme.PHASE
@@ -368,7 +369,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         scope_head.addWidget(self.cycles_combo)
         scope_layout.addLayout(scope_head)
         self.wave.setTitle(None)
-        self.wave.setMinimumHeight(240)
+        self.wave.setMinimumHeight(200)
         scope_layout.addWidget(self.wave)
         dash.addWidget(scope_card, stretch=11)
 
@@ -402,7 +403,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         bottom.addWidget(self._wrap(self.harmonics), stretch=5)
         bottom.addWidget(details_card, stretch=4)
         for widget in (bottom.itemAt(i).widget() for i in range(bottom.count())):
-            widget.setMaximumHeight(330)
+            widget.setMaximumHeight(270)
         dash.addLayout(bottom, stretch=9)
         self.tabs.addTab(dashboard, "Instrumentação")
 
@@ -419,7 +420,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
         editor_bar.addWidget(self.btn_save)
         editor_layout.addLayout(editor_bar)
         self.editor = QPlainTextEdit(FIRMWARE_SKELETON)
-        self.editor.setFont(QFont("Consolas", 12))
+        self.editor.setObjectName("code")
+        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.editor.setTabStopDistance(4 * self.editor.fontMetrics().horizontalAdvance(" "))
+        self.highlighter = CHighlighter(self.editor.document())
         editor_layout.addWidget(self.editor)
         self.editor_page = editor_page
         self.tabs.addTab(editor_page, "Firmware C")
@@ -429,7 +433,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         # Console recolhível.
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
-        self.console.setFont(QFont("Consolas", 10))
+        self.console.setObjectName("log")
         self.console.setFixedHeight(130)
         self.console.setVisible(False)
         console_wrap = QWidget()
