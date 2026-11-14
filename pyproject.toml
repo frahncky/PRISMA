@@ -23,6 +23,8 @@ dev = ["pytest>=8,<10"]
 prisma = "prisma.main:main"
 [project.entry-points."prisma.protocols"]
 csv-trifasico-v1 = "prisma.plugins.csv_protocol:parse_message"
+[tool.setuptools.package-data]
+prisma = ["ui/assets/*.svg"]
 [tool.setuptools.packages.find]
 where = ["src"]
 [tool.pytest.ini_options]

@@ -15,3 +15,14 @@ def test_amostra_valida():
 def test_rejeita_mensagens_invalidas(msg):
     with pytest.raises((ValueError, KeyError)):
         parse_sample(msg)
+
+
+def test_status_demoem_preserva_mensagem_sinal_e_mascaras():
+    from prisma.core.protocol import HardwareStatus, parse_message
+
+    status = parse_message('{"type":"status","source":"DEMOEM","message":"ADC RAW",'
+        '"adc":{"dadp0_raw":65535},"adc_signed":{"dadp0":-1},"adc_timeout_mask":0,"adc_cal_fail_mask":2}')
+    assert isinstance(status, HardwareStatus)
+    assert status.message == "ADC RAW"
+    assert status.adc == {"dadp0_raw": 65535.0, "dadp0_signed": -1.0}
+    assert status.diagnostics == {"adc_timeout_mask": 0.0, "adc_cal_fail_mask": 2.0}

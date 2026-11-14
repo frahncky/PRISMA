@@ -6,7 +6,7 @@ import sqlite3
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QPushButton,
+    QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -78,10 +78,27 @@ class FeaturesMixin:
         form.addRow("Potências por fase", self.power_view)
         self.tabs.addTab(analysis, "Análise")
 
+        hardware = QWidget()
+        hw_layout = QVBoxLayout(hardware)
+        self.hardware_summary = QLabel("Sem telemetria de estados.")
+        self.hardware_summary.setObjectName("muted")
+        self.hardware_summary.setWordWrap(True)
+        hw_layout.addWidget(self.hardware_summary)
+        self.adc_table = QTableWidget(0, 3)
+        self.adc_table.setHorizontalHeaderLabels(["Canal ADC", "Valor", "Nível"])
+        self.adc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.adc_table.verticalHeader().setVisible(False)
+        self.adc_table.horizontalHeader().setStretchLastSection(True)
+        self.adc_table.setColumnWidth(0, 170)
+        self.adc_table.setColumnWidth(1, 120)
+        hw_layout.addWidget(self.adc_table, stretch=1)
+        hw_layout.addWidget(QLabel("Última mensagem de estado (JSON)"))
         self.hardware_view = QPlainTextEdit()
         self.hardware_view.setReadOnly(True)
+        self.hardware_view.setMaximumHeight(190)
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
-        self.tabs.addTab(self.hardware_view, "LEDs / GPIO / ADC / LCD")
+        hw_layout.addWidget(self.hardware_view)
+        self.tabs.addTab(hardware, "Hardware / ADC")
 
         development = QWidget()
         layout = QVBoxLayout(development)
@@ -110,6 +127,9 @@ class FeaturesMixin:
         layout.addWidget(QLabel("Mapa de memória produzido pela toolchain"))
         layout.addWidget(self.map_view)
         self.tabs.addTab(development, "Build / depuração")
+        self._add_nav("Análise e potências", analysis)
+        self._add_nav("Hardware / ADC", hardware)
+        self._add_nav("Build e depuração", development)
         self.btn_compile.setText("Compilar")
         self.btn_flash.setText("Gravar BDM")
         self.btn_compile.setToolTip("Abra um projeto na aba Build / depuração.")
@@ -183,9 +203,33 @@ class FeaturesMixin:
                 QMessageBox.critical(self, "Diagnóstico", str(exc))
 
     def _on_hardware_status(self, status) -> None:
+        message = getattr(status, "message", "")
+        diagnostics = getattr(status, "diagnostics", {})
         self.hardware_view.setPlainText("TELEMETRIA SERIAL · estados informados pelo firmware\n\n" +
-            json.dumps({"leds": status.leds, "gpio": status.gpio, "adc": status.adc, "lcd": status.lcd},
-                       indent=2, ensure_ascii=False))
+            json.dumps({"message": message, "leds": status.leds, "gpio": status.gpio, "adc": status.adc,
+                        "lcd": status.lcd, "diagnostics": diagnostics}, indent=2, ensure_ascii=False))
+        problems = [f"{name} = {int(value)}" for name, value in diagnostics.items() if value]
+        summary = f"Mensagem: {message or '—'}"
+        if diagnostics:
+            summary += " · " + ("⚠ " + ", ".join(problems) if problems else "diagnósticos OK")
+        self.hardware_summary.setText(summary)
+        if not status.adc:
+            return
+        self.adc_table.setRowCount(len(status.adc))
+        for row, (name, value) in enumerate(sorted(status.adc.items())):
+            # Palavras brutas de 16 bits; valores com sinal ocupam ±32768.
+            span = 32768.0 if name.endswith("_signed") else 65535.0
+            level = min(1.0, abs(value) / span)
+            bar = QProgressBar()
+            bar.setRange(0, 1000)
+            bar.setValue(int(level * 1000))
+            bar.setTextVisible(False)
+            bar.setMaximumHeight(14)
+            bar.setStyleSheet("QProgressBar { background: #17263a; border: none; border-radius: 5px; }"
+                              "QProgressBar::chunk { background: #24bace; border-radius: 5px; }")
+            self.adc_table.setItem(row, 0, QTableWidgetItem(name))
+            self.adc_table.setItem(row, 1, QTableWidgetItem(f"{value:.0f}"))
+            self.adc_table.setCellWidget(row, 2, bar)
 
     def export_report(self) -> None:
         if self.last_analysis is None:

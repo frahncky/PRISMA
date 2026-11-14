@@ -1,5 +1,5 @@
 """Protocolo serial do PRISMA v1 (uma linha JSON por amostra)."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import math
 
@@ -20,6 +20,8 @@ class HardwareStatus:
     gpio: dict[str, bool]
     adc: dict[str, float]
     lcd: list[str]
+    message: str = ""
+    diagnostics: dict[str, float] = field(default_factory=dict)
 
 
 def parse_message(line: bytes | str) -> Sample | HardwareStatus:
@@ -40,7 +42,18 @@ def parse_message(line: bytes | str) -> Sample | HardwareStatus:
     lcd = payload.get("lcd", [])
     if not isinstance(lcd, list) or len(lcd) > 4 or any(not isinstance(row, str) or len(row) > 80 for row in lcd):
         raise ValueError("LCD inválido")
-    return HardwareStatus(*digital, {key: _number(value, key) for key, value in adc.items()}, lcd)
+    adc_values = {key: _number(value, key) for key, value in adc.items()}
+    signed = payload.get("adc_signed", {})
+    if not isinstance(signed, dict) or len(signed) > 64 or any(len(key) > 40 for key in signed):
+        raise ValueError("Grupo adc_signed inválido")
+    adc_values.update({f"{key}_signed": _number(value, key) for key, value in signed.items()})
+    message = payload.get("message", "")
+    if not isinstance(message, str) or len(message) > 120:
+        raise ValueError("Mensagem de status inválida")
+    # Campos numéricos de diagnóstico no nível raiz (ex.: adc_timeout_mask, adc_cal_fail_mask).
+    diagnostics = {key: _number(value, key) for key, value in payload.items()
+                   if key.endswith("_mask") and len(key) <= 40}
+    return HardwareStatus(*digital, adc_values, lcd, message, diagnostics)
 
 def _number(value: object, field: str) -> float:
     if isinstance(value, bool) or not isinstance(value, (float, int)):

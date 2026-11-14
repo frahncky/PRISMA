@@ -7,8 +7,8 @@ import sqlite3
 import numpy as np
 import pyqtgraph as pg
 
-from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QAction, QFont
+from PySide6.QtCore import QSize, QTimer, Qt
+from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTabWidget,
@@ -25,6 +25,11 @@ from prisma.core.history import SqliteRecorder
 from prisma.ui.features import FeaturesMixin
 
 COLORS = {"A": "#4ad6ea", "B": "#f2b84b", "C": "#e27eaf"}
+ICON_PATH = Path(__file__).with_name("assets") / "prisma.svg"
+
+
+def app_icon() -> QIcon:
+    return QIcon(str(ICON_PATH))
 
 FIRMWARE_SKELETON = """/* PRISMA - exemplo ilustrativo (NÃO é firmware pronto para gravação).
  * Alvo planejado: Freescale MCF51EM256 / ColdFire V1.
@@ -44,23 +49,43 @@ int main(void)
 """
 
 STYLE = """
-QWidget { background: #101925; color: #e3edf6; font-family: 'Segoe UI'; font-size: 12px; }
-QMainWindow { background: #101925; }
-QLabel#title { font-size: 28px; font-weight: 800; color: #ffffff; }
-QLabel#muted { color: #91a7bb; }
+QWidget { background: #0d1522; color: #e3edf6; font-family: 'Segoe UI'; font-size: 12px; }
+QMainWindow { background: #0d1522; }
+QLabel#title { font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: 3px; }
+QLabel { background: transparent; }
+QLabel#muted { color: #8ea3b8; }
+QLabel#section { color: #6f86a0; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; padding-top: 6px; }
 QLabel#metricValue { font-size: 26px; font-weight: 700; }
-QFrame#panel { background: #182636; border: 1px solid #2a3c4f; border-radius: 10px; }
-QPushButton { background: #1d364a; border: 1px solid #35506a; border-radius: 6px; padding: 8px 11px; }
-QPushButton:hover { background: #28516d; }
-QPushButton:disabled { background: #1a2734; color: #6c7d8e; border-color: #2a3945; }
-QPushButton#primary { background: #087b9b; border-color: #13a4bf; font-weight: 700; }
-QComboBox { background: #1c2b3e; border: 1px solid #36536c; padding: 7px; border-radius: 5px; }
-QTabWidget::pane { border: 1px solid #2c4255; border-radius: 8px; }
-QTabBar::tab { background: #152334; padding: 10px 18px; margin-right: 2px; }
-QTabBar::tab:selected { background: #244157; color: #ffffff; }
-QPlainTextEdit { background: #0b1521; color: #d8ecfc; border: 1px solid #274058; border-radius: 5px; padding: 8px; }
-QSplitter::handle { background: #2a4155; }
-QMenuBar, QMenu { background: #172638; }
+QLabel#chip { background: #3a2a10; border: 1px solid #c08a2c; border-radius: 11px; padding: 4px 10px; color: #ffd890; font-weight: 700; }
+QFrame#panel { background: #142133; border: 1px solid #22344a; border-radius: 12px; }
+QPushButton { background: #1a2d44; border: 1px solid #2c4560; border-radius: 7px; padding: 7px 12px; }
+QPushButton:hover { background: #22405e; border-color: #3d6488; }
+QPushButton:pressed { background: #163049; }
+QPushButton:checked { background: #5a3d12; border-color: #c08a2c; color: #ffd890; }
+QPushButton:disabled { background: #141f2d; color: #5d6f82; border-color: #1f2d3d; }
+QPushButton#primary { background: #0a7f9e; border-color: #17a9c4; font-weight: 700; color: #ffffff; }
+QPushButton#primary:hover { background: #0c93b6; }
+QPushButton#nav { text-align: left; background: transparent; border: none; border-radius: 7px; padding: 8px 10px; color: #bed3e2; }
+QPushButton#nav:hover { background: #1b2c42; color: #ffffff; }
+QPushButton#nav:checked { background: #1e3b57; color: #ffffff; border-left: 3px solid #4ad6ea; }
+QComboBox { background: #17263a; border: 1px solid #2c4560; padding: 6px 8px; border-radius: 6px; }
+QComboBox QAbstractItemView { background: #17263a; selection-background-color: #22405e; }
+QTabWidget::pane { border: 1px solid #22344a; border-radius: 10px; top: -1px; }
+QTabBar::tab { background: transparent; color: #8ea3b8; padding: 9px 16px; border-bottom: 2px solid transparent; }
+QTabBar::tab:hover { color: #e3edf6; }
+QTabBar::tab:selected { color: #ffffff; border-bottom: 2px solid #4ad6ea; }
+QPlainTextEdit { background: #09111c; color: #d8ecfc; border: 1px solid #22344a; border-radius: 8px; padding: 8px; }
+QTableWidget { background: #0f1a2a; gridline-color: #22344a; border: 1px solid #22344a; border-radius: 8px; }
+QHeaderView::section { background: #17263a; color: #9fb4ca; border: none; padding: 6px; font-weight: 600; }
+QSplitter::handle { background: #0d1522; width: 6px; }
+QMenuBar { background: #0d1522; }
+QMenuBar::item:selected { background: #1b2c42; }
+QMenu { background: #142133; border: 1px solid #2a3f57; }
+QMenu::item:selected { background: #22405e; }
+QStatusBar { background: #0a111c; color: #8ea3b8; }
+QScrollBar:vertical { background: transparent; width: 10px; }
+QScrollBar::handle:vertical { background: #2a3f57; border-radius: 5px; min-height: 24px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
 """
 
 
@@ -71,6 +96,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.resize(1480, 920)
         self.setMinimumSize(1060, 700)
         self.setStyleSheet(STYLE)
+        self.setWindowIcon(app_icon())
+        self.paused = False
         pg.setConfigOptions(antialias=True, background="#132231", foreground="#b6cad9")
         self.buffer = SignalBuffer()
         self.reader: SerialReader | None = None
@@ -96,13 +123,19 @@ class MainWindow(FeaturesMixin, QMainWindow):
             action = QAction(name, self)
             action.triggered.connect(fn)
             menu.addAction(action)
+        view = self.menuBar().addMenu("Exibir")
+        for name, fn, keys in (
+            ("Pausar / retomar gráficos", self.toggle_pause, "Space"),
+            ("Exportar imagem dos instrumentos…", self.export_snapshot, "Ctrl+Shift+S"),
+            ("Tela cheia", self.toggle_fullscreen, "F11"),
+        ):
+            action = QAction(name, self)
+            action.setShortcut(QKeySequence(keys))
+            action.triggered.connect(lambda _=False, f=fn: f())
+            view.addAction(action)
         info = self.menuBar().addMenu("Ajuda")
         about = QAction("Sobre o PRISMA", self)
-        about.triggered.connect(lambda: QMessageBox.information(
-            self, f"PRISMA v{__version__}",
-            "Plataforma de Registro, Instrumentação, Sinais, Medição e Análise.\n"
-            "Os gráficos iniciais são SINTÉTICOS. A integração física DEMOEM ainda requer validação."
-        ))
+        about.triggered.connect(self.show_about)
         info.addAction(about)
         acquisition = self.menuBar().addMenu("Aquisição")
         self.record_action = QAction("Iniciar registro CSV…", self)
@@ -176,9 +209,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
         header = QHBoxLayout()
         brand = QVBoxLayout()
-        title = QLabel("◈ PRISMA")
+        logo = QLabel()
+        logo.setPixmap(app_icon().pixmap(QSize(46, 46)))
+        header.addWidget(logo)
+        header.addSpacing(6)
+        title = QLabel("PRISMA")
         title.setObjectName("title")
-        subtitle = QLabel("PLATAFORMA DE REGISTRO, INSTRUMENTAÇÃO, SINAIS, MEDIÇÃO E ANÁLISE")
+        subtitle = QLabel("Plataforma de Registro, Instrumentação, Sinais, Medição e Análise")
         subtitle.setObjectName("muted")
         brand.addWidget(title)
         brand.addWidget(subtitle)
@@ -187,6 +224,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.mode_label.setStyleSheet(
             "color: #f4bf62; font-weight: 700; padding: 8px; background: #40351e; border-radius: 5px;"
         )
+        self.pause_chip = QLabel("GRÁFICOS PAUSADOS")
+        self.pause_chip.setObjectName("chip")
+        self.pause_chip.setVisible(False)
+        header.addWidget(self.pause_chip)
+        header.addSpacing(6)
         header.addWidget(self.mode_label)
         main.addLayout(header)
 
@@ -200,8 +242,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
             b.setToolTip("Requer integração e validação da toolchain ColdFire V1/BDM.")
         self.btn_open.clicked.connect(self.open_code)
         self.btn_save.clicked.connect(self.save_code)
+        self.btn_pause = QPushButton("Pausar")
+        self.btn_pause.setCheckable(True)
+        self.btn_pause.setToolTip("Congela os gráficos sem interromper a aquisição ou o registro (Espaço).")
+        self.btn_pause.clicked.connect(lambda _=False: self.toggle_pause())
+        self.btn_snapshot = QPushButton("Exportar imagem")
+        self.btn_snapshot.setToolTip("Salva os instrumentos como PNG (Ctrl+Shift+S).")
+        self.btn_snapshot.clicked.connect(lambda _=False: self.export_snapshot())
         for btn in (self.btn_open, self.btn_save, self.btn_compile, self.btn_flash):
             toolbar.addWidget(btn)
+        toolbar.addSpacing(12)
+        toolbar.addWidget(self.btn_pause)
+        toolbar.addWidget(self.btn_snapshot)
         toolbar.addStretch(1)
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(150)
@@ -219,44 +271,41 @@ class MainWindow(FeaturesMixin, QMainWindow):
         main.addLayout(toolbar)
 
         body = QSplitter(Qt.Orientation.Horizontal)
+        self.nav_buttons: list[QPushButton] = []
+        self._nav_layout = QVBoxLayout()
+        self._nav_layout.setSpacing(2)
         sidebar, side = self._panel()
         sidebar.setMinimumWidth(235)
         sidebar.setMaximumWidth(320)
-        side.addWidget(QLabel("HARDWARE-ALVO"))
+        hw_title = QLabel("HARDWARE-ALVO")
+        hw_title.setObjectName("section")
+        side.addWidget(hw_title)
         board = QLabel("DEMOEM\nMCF51EM256")
         self.board_label = board
         board.setWordWrap(True)
         board.setAlignment(Qt.AlignmentFlag.AlignCenter)
         board.setStyleSheet(
-            "font-size: 23px; font-weight: 700; color: #4ad6ea;"
-            "background: #102030; border-radius: 8px; padding: 24px 8px"
+            "font-size: 20px; font-weight: 700; color: #4ad6ea;"
+            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #10243a, stop:1 #0c1828);"
+            "border: 1px solid #1f3a55; border-radius: 10px; padding: 20px 8px"
         )
         side.addWidget(board)
-        self.hw_status = QLabel("BDM: NÃO CONECTADO\nSERIAL: NÃO CONECTADO")
+        self.hw_status = QLabel("● Serial: não conectada")
         self.hw_status.setStyleSheet("color: #f5bf69;")
         side.addWidget(self.hw_status)
-        side.addWidget(QLabel("INSTRUMENTOS"))
-        for text in (
-            "Osciloscópio · 3 canais",
-            "Diagrama fasorial",
-            "Análise de harmônicas",
-            "Tensão RMS",
-            "Editor C"
-        ):
-            item = QLabel("▸  " + text)
-            item.setStyleSheet("color: #bed3e2; padding: 7px;")
-            side.addWidget(item)
+        nav_title = QLabel("NAVEGAÇÃO")
+        nav_title.setObjectName("section")
+        side.addWidget(nav_title)
+        side.addLayout(self._nav_layout)
         side.addStretch(1)
-        note = QLabel(
-            "Primeira versão: análise demonstrativa.\n"
-            "A instrumentação física depende de firmware e canal serial compatíveis."
-        )
+        note = QLabel("Medições sem certificação metrológica.\nDados reais dependem de firmware e calibração.")
         note.setWordWrap(True)
         note.setObjectName("muted")
         side.addWidget(note)
         body.addWidget(sidebar)
 
         self.tabs = QTabWidget()
+        self.tabs.currentChanged.connect(self._sync_nav)
         body.addWidget(self.tabs)
         body.setStretchFactor(1, 1)
         main.addWidget(body, stretch=1)
@@ -268,7 +317,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.metric_labels = {}
         for phase in ("A", "B", "C"):
             card, card_layout = self._panel()
-            caption = QLabel("FASE " + phase + " · RMS")
+            caption = QLabel("FASE " + phase + " · TENSÃO RMS")
             caption.setObjectName("muted")
             value = QLabel("--- V")
             value.setObjectName("metricValue")
@@ -278,10 +327,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
             metrics.addWidget(card)
             self.metric_labels[phase] = value
         info_card, info_layout = self._panel()
-        caption = QLabel("FREQUÊNCIA DE REFERÊNCIA")
+        caption = QLabel("FREQUÊNCIA")
         caption.setObjectName("muted")
         info_layout.addWidget(caption)
         self.frequency_label = QLabel("60 Hz (referência)")
+        self.frequency_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff;")
         info_layout.addWidget(self.frequency_label)
         metrics.addWidget(info_card)
         dash_layout.addLayout(metrics)
@@ -335,9 +385,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.editor = QPlainTextEdit(FIRMWARE_SKELETON)
         self.editor.setFont(QFont("Consolas", 12))
         self.tabs.addTab(self.editor, "Firmware C (editor)")
+        self._add_nav("Instrumentação", dashboard)
+        self._add_nav("Firmware C", self.editor)
 
         console_wrap, console_lay = self._panel()
-        console_lay.addWidget(QLabel("CONSOLE / LOG DE COMUNICAÇÃO"))
+        console_title = QLabel("CONSOLE")
+        console_title.setObjectName("section")
+        console_lay.addWidget(console_title)
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
         self.console.setMaximumHeight(116)
@@ -410,7 +464,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.b_connect.setText("Desconectar")
 
     def _on_connected(self, port: str) -> None:
-        self.hw_status.setText(f"BDM: NÃO VALIDADO\nSERIAL: {port} ABERTA")
+        self.hw_status.setText(f"● Serial: {port} aberta")
+        self.hw_status.setStyleSheet("color: #7fe0a0;")
         self._set_mode(f"SERIAL {port} — AGUARDANDO AMOSTRAS")
 
     def _on_sample(self, sample: Sample) -> None:
@@ -429,7 +484,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
     def _on_disconnected(self) -> None:
         self.stop_recording()
-        self.hw_status.setText("BDM: NÃO VALIDADO\nSERIAL: DESCONECTADA")
+        self.hw_status.setText("● Serial: desconectada")
+        self.hw_status.setStyleSheet("color: #f5bf69;")
         self.b_connect.setText("Conectar serial")
         if not self.mode.startswith("DEMONSTRAÇÃO"):
             self._set_mode("SERIAL DESCONECTADA — DADOS RETIDOS")
@@ -446,7 +502,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         self.demo_index = 0
-        self.hw_status.setText("BDM: NÃO CONECTADO\nSERIAL: NÃO CONECTADO")
+        self.hw_status.setText("● Serial: não conectada")
+        self.hw_status.setStyleSheet("color: #f5bf69;")
         self.b_connect.setText("Conectar serial")
         self._set_mode("DEMONSTRAÇÃO — SINAIS SINTÉTICOS")
         self._log("Modo demonstração ativado. Dados não provêm da placa.")
@@ -489,6 +546,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.demo_index += 120
 
     def _draw_signals(self) -> None:
+        if self.paused:
+            return
         t, values = self.buffer.arrays(duration_s=0.25)
         if t.size < 12:
             self.last_analysis = None
@@ -584,6 +643,53 @@ class MainWindow(FeaturesMixin, QMainWindow):
             f"Fasor C: {abs(result.phasors['C']):.1f} V ∠ {angles['C']:.1f}°\n"
             f"{power_text}\nEstimativas sem certificação metrológica."
         )
+
+    def _add_nav(self, label: str, widget: QWidget) -> None:
+        button = QPushButton(label)
+        button.setObjectName("nav")
+        button.setCheckable(True)
+        button.clicked.connect(lambda _=False, w=widget: (self.tabs.setCurrentWidget(w), self._sync_nav()))
+        self._nav_layout.addWidget(button)
+        self.nav_buttons.append((button, widget))
+        self._sync_nav()
+
+    def _sync_nav(self, index: int | None = None) -> None:
+        current = self.tabs.currentWidget()
+        for button, widget in self.nav_buttons:
+            button.setChecked(widget is current)
+
+    def toggle_pause(self) -> None:
+        self.paused = not self.paused
+        self.btn_pause.setChecked(self.paused)
+        self.btn_pause.setText("Retomar" if self.paused else "Pausar")
+        self.pause_chip.setVisible(self.paused)
+        self._log("Gráficos pausados; aquisição e registro continuam." if self.paused else "Gráficos retomados.")
+
+    def export_snapshot(self, filename: str | None = None) -> None:
+        if filename is None:
+            filename, _ = QFileDialog.getSaveFileName(self, "Exportar imagem", "prisma-instrumentos.png", "PNG (*.png)")
+        if not filename:
+            return
+        if not self.tabs.widget(0).grab().save(filename, "PNG"):
+            QMessageBox.critical(self, "Imagem", f"Não foi possível salvar {filename}.")
+            return
+        self._log(f"Imagem salva: {filename}")
+
+    def toggle_fullscreen(self) -> None:
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
+    def show_about(self) -> None:
+        box = QMessageBox(self)
+        box.setWindowTitle("Sobre o PRISMA")
+        box.setIconPixmap(app_icon().pixmap(QSize(72, 72)))
+        box.setText(f"<h3>PRISMA v{__version__}</h3>"
+                    "Plataforma de Registro, Instrumentação, Sinais, Medição e Análise.<br>"
+                    "<i>Programar · Medir · Analisar</i>")
+        box.setInformativeText("Os gráficos iniciais são sintéticos. As medições não têm certificação metrológica.")
+        box.exec()
 
     def _select_phasor(self, phase: str) -> None:
         self.selected_phase = phase

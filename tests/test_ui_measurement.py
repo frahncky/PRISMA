@@ -165,3 +165,32 @@ def test_ui_build_gravacao_requer_confirmacao_e_artefato_integro(window, tmp_pat
     window.flash_project()
     assert not (tmp_path / 'executed').exists()
     assert any('Artefato alterado' in text for text in errors)
+
+
+def test_icone_navegacao_pausa_e_imagem(window, tmp_path):
+    from prisma.ui.main_window import ICON_PATH
+
+    assert ICON_PATH.is_file() and not window.windowIcon().isNull()
+    for button, widget in window.nav_buttons:
+        button.click()
+        assert window.tabs.currentWidget() is widget and button.isChecked()
+    window.tabs.setCurrentIndex(0)
+    window.toggle_pause()
+    window.wave.getPlotItem().listDataItems()[0].setData([0, 1], [0, 0])
+    window._tick()
+    assert window.paused and window.curves["A"].getData()[0].tolist() == [0, 1]
+    window.toggle_pause()
+    assert not window.paused
+    target = tmp_path / "painel.png"
+    window.export_snapshot(str(target))
+    assert target.stat().st_size > 0
+
+
+def test_painel_adc_mostra_valores_e_alertas(window):
+    from prisma.core.protocol import parse_message
+
+    window._on_hardware_status(parse_message('{"type":"status","message":"ADC RAW",'
+        '"adc":{"dadp0_raw":1200},"adc_signed":{"dadp0":1200},"adc_cal_fail_mask":2}'))
+    assert window.adc_table.rowCount() == 2
+    assert window.adc_table.item(0, 0).text() == "dadp0_raw"
+    assert "adc_cal_fail_mask = 2" in window.hardware_summary.text()
