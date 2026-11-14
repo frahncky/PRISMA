@@ -293,3 +293,18 @@ def test_editor_localiza_substitui_e_numera_linhas(window):
     assert panel.bar.isVisibleTo(panel) and panel.replace_edit.isVisibleTo(panel)
     panel.close_bar()
     assert not panel.bar.isVisibleTo(panel)
+
+
+def test_rajadas_usam_fase_a_como_referencia_dos_fasores(window):
+    import numpy as np
+    from prisma.core.protocol import Sample, SampleBlock
+
+    fs = 1995.487
+    for seq, start in ((0, 0.0), (1, 0.0037)):  # blocos começando em instantes diferentes do ciclo
+        samples = tuple(Sample(seq * 10.0 + i / fs, *(30000 + 20000 * np.sin(2 * np.pi * 51.85 * (i / fs + start) - k * 2.0944)
+                        for k in range(3))) for i in range(500))
+        window._on_block(SampleBlock(seq, fs, ("ad4", "ad5", "ad6"), samples))
+        window._draw_signals()
+        text = window.details.text()
+        assert "∠ 0.0°" in text and ("∠ -120.0°" in text or "∠ -119.9°" in text or "∠ -120.1°" in text)
+    assert window.phasor_reference.currentIndex() == 1

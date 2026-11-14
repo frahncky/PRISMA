@@ -564,6 +564,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self._apply_units()
             if self.frequency_combo.currentIndex() != 2:
                 self.frequency_combo.setCurrentIndex(2)
+            # Cada rajada começa num instante arbitrário do ciclo: só o ângulo entre fases
+            # é estável, então a fase A vira a referência (0°).
+            if self.phasor_reference.currentIndex() == 0:
+                self.phasor_reference.setCurrentIndex(1)
             self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
                       f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
         self._show_block(block, ADC_VREF_V, ADC_FULL_SCALE)
@@ -727,7 +731,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.power_view.clearContents()
         rows = []
         for phase in ("A", "B", "C"):
-            ph = result.phasors[phase]
+            ph = result.phasors[phase] * rotation
             rows.append((f"<span style='color:{COLORS[phase]}'>■</span> Fasor {phase}",
                          f"{abs(ph):.3f} V ∠ {np.degrees(np.angle(ph)):.1f}°"))
         if result.power:
