@@ -33,6 +33,12 @@ ADC_FULL_SCALE = 65535
 ICON_PATH = Path(__file__).with_name("assets") / "prisma.svg"
 
 
+def _degrees(phasor: complex, decimals: int) -> str:
+    """Ângulo em graus sem "-0.0" (zero negativo de arredondamento)."""
+    value = round(float(np.degrees(np.angle(phasor))), decimals) + 0.0
+    return f"{value:.{decimals}f}"
+
+
 def app_icon() -> QIcon:
     return QIcon(str(ICON_PATH))
 
@@ -721,7 +727,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             )
             item.sigPointsClicked.connect(lambda item, points, event, p=phase: self._select_phasor(p))
             if self.selected_phase == phase:
-                self.selected_phasor.setText(f"Fase {phase}: {abs(ph):.3f} V ∠ {np.degrees(np.angle(ph)):.2f}°")
+                self.selected_phasor.setText(f"Fase {phase}: {abs(ph):.3f} V ∠ {_degrees(ph, 2)}°")
             tag = pg.TextItem(phase, color=COLORS[phase], anchor=(0.5, 0.5))
             tag.setPos(ph.real * 1.13, ph.imag * 1.13)
             self.phasor.addItem(tag)
@@ -749,7 +755,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         for phase in ("A", "B", "C"):
             ph = result.phasors[phase] * rotation
             rows.append((f"<span style='color:{COLORS[phase]}'>■</span> Fasor {phase}",
-                         f"{abs(ph):.3f} V ∠ {np.degrees(np.angle(ph)):.1f}°"))
+                         f"{abs(ph):.3f} V ∠ {_degrees(ph, 1)}°"))
         if result.power:
             p_total = sum(p.active_w for p in result.power.values())
             q_total = sum(p.reactive_fundamental_var for p in result.power.values())
