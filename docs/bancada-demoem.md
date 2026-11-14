@@ -17,6 +17,8 @@ Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","messa
 
 O mapeamento do MCF51EM256 foi confirmado pela tabela de canais da AN3949: DAD0=ADC3/canal 1, DAD1=ADC1/canal 2, DAD2=ADC2/canal 3, AD4=ADC3/canal 4, AD5=ADC1/canal 5 e AD6=ADC2/canal 6. A alternância imediata de cada módulo entre entrada diferencial e simples fez o primeiro resultado carregar resíduos do canal anterior. A revisão validada mantém um canal fixo por módulo (`AD4`, `AD5`, `AD6`). Os canais diferenciais devem ser adquiridos futuramente em blocos separados, com tempo de assentamento comprovado.
 
+Captura de 30 s em 14/11/2026 com o mesmo firmware: 175 linhas (5,8 linhas/s), `adc_timeout_mask` sempre 0. Os canais ficam em zero entre 45 % e 66 % do tempo e raramente altos juntos (30 % das linhas com dois ou mais canais diferentes de zero), coerente com três sinais defasados. AD5 satura em 65535 em 20 das 175 linhas; AD6 não passa de 32032. Os valores se agrupam em degraus próximos de múltiplos de ~8000 contagens. A 5,8 linhas/s não se reconstrói a forma de onda de 50/60 Hz: é necessária captura em rajada com taxa fixa.
+
 ## Teste com USB único (gravação + telemetria pela PEmicro) — pendente
 
 Objetivo: dispensar o CH340 usando a serial virtual do Embedded Multilink da própria DEMOEM. O diagnóstico de 13/11/2026 mostrou a interface `VID_1357&PID_0504&MI_01` ("USB and Serial Interface") **sem porta COM** (`serial_ports: []`). O manual cita o Terminal Window Utility do "P&E Embedded Multilink Toolkit" com opção "virtual USB COM"; não está confirmado que o Windows crie uma COM padrão acessível ao pyserial.
