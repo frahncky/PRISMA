@@ -4,7 +4,7 @@ from pathlib import Path
 import sqlite3
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
@@ -12,6 +12,8 @@ from PySide6.QtWidgets import (
 )
 
 from prisma.core.calibration import Calibration
+import pyqtgraph as pg
+
 from prisma.ui import theme
 from prisma.core.devices import DeviceProfile, load_protocol, serial_inventory
 from prisma.core.history import export_session, list_sessions
@@ -122,26 +124,70 @@ class FeaturesMixin:
         hardware = QWidget()
         hw_layout = QVBoxLayout(hardware)
         hw_layout.setContentsMargins(20, 16, 20, 12)
-        hw_layout.setSpacing(10)
-        self.hardware_summary = QLabel("Sem telemetria de estados.")
+        hw_layout.setSpacing(12)
+        self.hardware_summary = QLabel("Sem telemetria da placa. Conecte a serial para ver os canais do ADC.")
         self.hardware_summary.setObjectName("muted")
         self.hardware_summary.setWordWrap(True)
         hw_layout.addWidget(self.hardware_summary)
+
+        # Última rajada: forma de onda bruta e estatística por canal.
+        burst_card = QFrame()
+        burst_card.setObjectName("card")
+        burst_layout = QVBoxLayout(burst_card)
+        burst_layout.setContentsMargins(14, 12, 14, 12)
+        burst_layout.addWidget(self._section("ÚLTIMA RAJADA · CONTAGENS BRUTAS DO ADC"))
+        self.raw_plot = pg.PlotWidget()
+        self.raw_plot.setBackground(theme.PLOT_BG)
+        self.raw_plot.showGrid(x=True, y=True, alpha=0.12)
+        self.raw_plot.setMenuEnabled(False)
+        self.raw_plot.setLabel("left", "Contagens")
+        self.raw_plot.setLabel("bottom", "Tempo", units="s")
+        self.raw_plot.setYRange(0, 65535, padding=0.02)
+        self.raw_plot.addItem(pg.InfiniteLine(pos=65535, angle=0, pen=pg.mkPen(theme.DANGER, width=1, style=Qt.PenStyle.DashLine)))
+        self.raw_plot.setMinimumHeight(180)
+        self.raw_curves = [self.raw_plot.plot(pen=pg.mkPen(color, width=1.6))
+                           for color in theme.PHASE.values()]
+        burst_layout.addWidget(self.raw_plot, stretch=1)
+        self.burst_table = QTableWidget(0, 7)
+        self.burst_table.setHorizontalHeaderLabels(
+            ["Canal", "Mín", "Máx", "Média", "Pico no pino", "Uso da escala", "Saturadas"])
+        self.burst_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.burst_table.verticalHeader().setVisible(False)
+        self.burst_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.burst_table.setShowGrid(False)
+        self.burst_table.setFixedHeight(128)
+        burst_layout.addWidget(self.burst_table)
+        hw_layout.addWidget(burst_card, stretch=3)
+
+        lower = QHBoxLayout()
+        lower.setSpacing(12)
+        status_card = QFrame()
+        status_card.setObjectName("card")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(14, 12, 14, 12)
+        status_layout.addWidget(self._section("ESTADOS INFORMADOS PELO FIRMWARE"))
         self.adc_table = QTableWidget(0, 3)
         self.adc_table.setHorizontalHeaderLabels(["Canal ADC", "Valor", "Nível"])
         self.adc_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.adc_table.verticalHeader().setVisible(False)
         self.adc_table.horizontalHeader().setStretchLastSection(True)
-        self.adc_table.setColumnWidth(0, 170)
-        self.adc_table.setColumnWidth(1, 120)
-        hw_layout.addWidget(self.adc_table, stretch=1)
-        hw_layout.addWidget(self._section("ÚLTIMA MENSAGEM DE ESTADO (JSON)"))
+        self.adc_table.setShowGrid(False)
+        self.adc_table.setColumnWidth(0, 150)
+        self.adc_table.setColumnWidth(1, 90)
+        status_layout.addWidget(self.adc_table)
+        lower.addWidget(status_card, stretch=1)
+        json_card = QFrame()
+        json_card.setObjectName("card")
+        json_layout = QVBoxLayout(json_card)
+        json_layout.setContentsMargins(14, 12, 14, 12)
+        json_layout.addWidget(self._section("ÚLTIMA MENSAGEM DE ESTADO (JSON)"))
         self.hardware_view = QPlainTextEdit()
         self.hardware_view.setReadOnly(True)
         self.hardware_view.setObjectName("log")
-        self.hardware_view.setMaximumHeight(190)
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
-        hw_layout.addWidget(self.hardware_view)
+        json_layout.addWidget(self.hardware_view)
+        lower.addWidget(json_card, stretch=1)
+        hw_layout.addLayout(lower, stretch=2)
         self.tabs.addTab(hardware, "Hardware / ADC")
 
         development = QWidget()
@@ -282,6 +328,39 @@ class FeaturesMixin:
                 self._log(f"Diagnóstico salvo: {filename}")
             except OSError as exc:
                 QMessageBox.critical(self, "Diagnóstico", str(exc))
+
+    def _show_block(self, block, vref: float, full_scale: int) -> None:
+        """Mostra a rajada bruta (antes de calibração) na página Hardware / ADC."""
+        t = [s.t - block.samples[0].t for s in block.samples]
+        columns = list(zip(*((s.va, s.vb, s.vc) for s in block.samples)))
+        for curve, values in zip(self.raw_curves, columns):
+            curve.setData(t, values)
+        self.burst_table.setRowCount(len(block.channels))
+        for row, (name, values) in enumerate(zip(block.channels, columns)):
+            peak = max(values)
+            saturated = sum(v >= full_scale for v in values)
+            usage = QProgressBar()
+            usage.setRange(0, 1000)
+            usage.setValue(int(1000 * peak / full_scale))
+            usage.setFormat(f"{100 * peak / full_scale:.0f} %")
+            usage.setMaximumHeight(16)
+            usage.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            cells = (name.upper(), f"{min(values):.0f}", f"{peak:.0f}", f"{sum(values) / len(values):.0f}",
+                     f"{peak * vref / full_scale:.3f} V", None, f"{saturated}")
+            for column, text in enumerate(cells):
+                if text is None:
+                    self.burst_table.setCellWidget(row, column, usage)
+                    continue
+                item = QTableWidgetItem(text)
+                if column == 0:
+                    item.setForeground(QColor(list(theme.PHASE.values())[row % 3]))
+                if column == 6 and saturated:
+                    item.setForeground(QColor(theme.DANGER))
+                self.burst_table.setItem(row, column, item)
+        warn = f" · ⚠ timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
+        self.hardware_summary.setText(
+            f"Rajada {block.seq}: {len(block.samples)} amostras por canal a {block.fs_hz:.1f} Hz "
+            f"({len(block.samples) / block.fs_hz * 1000:.0f} ms){warn}. Pico no pino = contagem × {vref} V / {full_scale}.")
 
     def _on_hardware_status(self, status) -> None:
         message = getattr(status, "message", "")

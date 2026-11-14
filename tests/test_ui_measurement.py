@@ -232,3 +232,15 @@ def test_rajada_sem_calibracao_usa_contagens_e_frequencia_automatica(window):
     assert abs(shown - rms_counts * ADC_VREF_V / ADC_FULL_SCALE) < 0.02
     window.start_demo()
     assert not window.raw_counts
+
+
+def test_pagina_hardware_mostra_rajada_bruta_e_saturacao(window):
+    from prisma.core.protocol import Sample, SampleBlock
+
+    samples = tuple(Sample(i / 2000, float(i * 200 % 65536), 65535.0, 1000.0) for i in range(300))
+    window._show_block(SampleBlock(3, 2000.0, ("ad4", "ad5", "ad6"), samples), 3.3, 65535)
+    assert window.burst_table.rowCount() == 3
+    assert window.burst_table.item(1, 0).text() == "AD5"
+    assert window.burst_table.item(1, 6).text() == "300"
+    assert window.burst_table.item(2, 4).text() == f"{1000 * 3.3 / 65535:.3f} V"
+    assert "Rajada 3" in window.hardware_summary.text()

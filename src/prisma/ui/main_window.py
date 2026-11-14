@@ -562,6 +562,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self.frequency_combo.setCurrentIndex(2)
             self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
                       f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
+        self._show_block(block, ADC_VREF_V, ADC_FULL_SCALE)
         last = self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
