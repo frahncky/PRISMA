@@ -95,6 +95,55 @@ static void ADC_Init(void)
   ADC3SC3 = 0x00U;
 }
 
+/*
+ * Hardware self-calibration of the 16-bit ADC: 32-sample hardware average
+ * during CAL, then PG/MG = (sum of CLPx/CLMx) / 2 with the MSB set.
+ * A set bit in adc_cal_fail means CALF or timeout for ADC1/2/3.
+ */
+#define ADC_CAL_WAIT_LIMIT 200000UL
+#define ADC_CALIBRATE(n, failbit) \
+  do { \
+    volatile unsigned long cw = ADC_CAL_WAIT_LIMIT; \
+    word sum; \
+    ADC##n##SC2 = 0x00U; \
+    ADC##n##SC3 = 0x07U;                       /* AVGE, 32 samples. */ \
+    ADC##n##SC3 = (byte)(ADC##n##SC3 | 0x80U); /* Start CAL. */ \
+    while (((ADC##n##SC3 & 0x80U) != 0U) && (cw != 0UL)) { \
+      --cw; \
+    } \
+    if ((cw == 0UL) || ((ADC##n##SC3 & 0x40U) != 0U)) { \
+      adc_cal_fail = (byte)(adc_cal_fail | (failbit)); \
+    } else { \
+      sum = (word)(ADC##n##CLP0 + ADC##n##CLP1 + ADC##n##CLP2 + \
+                   ADC##n##CLP3 + ADC##n##CLP4 + ADC##n##CLPS); \
+      ADC##n##PG = (word)((sum >> 1) | 0x8000U); \
+      sum = (word)(ADC##n##CLM0 + ADC##n##CLM1 + ADC##n##CLM2 + \
+                   ADC##n##CLM3 + ADC##n##CLM4 + ADC##n##CLMS); \
+      ADC##n##MG = (word)((sum >> 1) | 0x8000U); \
+    } \
+    ADC##n##SC3 = 0x00U;                       /* Single conversion. */ \
+  } while (0)
+
+static byte adc_cal_fail;
+
+static void ADC_Calibrate(void)
+{
+  adc_cal_fail = 0U;
+  ADC_CALIBRATE(1, 0x01U);
+  ADC_CALIBRATE(2, 0x02U);
+  ADC_CALIBRATE(3, 0x04U);
+}
+
+static void SCI3_PutSigned(word value)
+{
+  /* Differential 16-bit results are two's complement. */
+  if ((value & 0x8000U) != 0U) {
+    SCI3_PutChar('-');
+    value = (word)(~value + 1U);
+  }
+  SCI3_PutUnsigned(value);
+}
+
 static word ADC1_ReadDifferential0(void)
 {
   volatile unsigned long wait = ADC_WAIT_LIMIT;
@@ -155,6 +204,10 @@ void main(void)
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"BOOT\"}\r\n");
   ADC_Init();
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC CONFIG OK\"}\r\n");
+  ADC_Calibrate();
+  SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"ADC CAL\",\"adc_cal_fail_mask\":");
+  SCI3_PutUnsigned((word)adc_cal_fail);
+  SCI3_PutString("}\r\n");
 
   PTAD_PTAD5 = 0;
   PTADD_PTADD5 = 1;
@@ -174,6 +227,12 @@ void main(void)
     SCI3_PutUnsigned(dadp1);
     SCI3_PutString(",\"dadp2_raw\":");
     SCI3_PutUnsigned(dadp2);
+    SCI3_PutString("},\"adc_signed\":{\"dadp0\":");
+    SCI3_PutSigned(dadp0);
+    SCI3_PutString(",\"dadp1\":");
+    SCI3_PutSigned(dadp1);
+    SCI3_PutString(",\"dadp2\":");
+    SCI3_PutSigned(dadp2);
     SCI3_PutString("},\"adc_timeout_mask\":");
     SCI3_PutUnsigned((word)adc_timeout);
     SCI3_PutString("}\r\n");

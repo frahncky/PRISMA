@@ -13,6 +13,19 @@ A placa DEMOEM/MCF51EM256 foi testada fisicamente em 14/11/2026. O firmware foi 
 Mensagem observada no primeiro teste: `{"type":"status","source":"DEMOEM","message":"PRISMA SCI3 OK"}`. A versão ADC foi validada com `adc_timeout_mask: 0`: DADP0 e DADP2 variaram, enquanto DADP1 permaneceu em zero na configuração testada. Os valores ainda são palavras brutas, sem calibração ou unidade física.
 
 
+## Próximo teste do ADC (firmware com autocalibração) — pendente
+
+O firmware atual executa a autocalibração dos ADC1/2/3 no boot (mensagem `ADC CAL` com `adc_cal_fail_mask`) e publica também `adc_signed`. Compilado sem erros em 14/11/2026; ainda não gravado na placa.
+
+1. Gravar `bin/Project.abs` pelo HI-WAVE e conferir `adc_cal_fail_mask: 0`.
+2. Comparar `adc_signed` com os valores brutos anteriores (offset deve diminuir após a calibração).
+3. **DADP1 em zero:** o manual (seção 2, "Analogue Signal Syntheses") indica que o QE8 tem três potenciômetros que ajustam os sinais de 50/60 Hz. Girar cada potenciômetro e observar qual canal responde; conferir também o jumper de J38 correspondente ao canal (TPM1CH0…TPM2CH2) e J29 (DADM1 a GND). Se DADP1 seguir em zero com sinal presente no pino, medir a tensão em DADP1 com multímetro/osciloscópio.
+
+| Item | Resultado |
+| --- | --- |
+| `adc_cal_fail_mask` | Pendente |
+| DADP1 responde ao potenciômetro | Pendente |
+
 ## Teste com USB único (gravação + telemetria pela PEmicro) — pendente
 
 Objetivo: dispensar o CH340 usando a serial virtual do Embedded Multilink da própria DEMOEM. O diagnóstico de 13/11/2026 mostrou a interface `VID_1357&PID_0504&MI_01` ("USB and Serial Interface") **sem porta COM** (`serial_ports: []`). O manual cita o Terminal Window Utility do "P&E Embedded Multilink Toolkit" com opção "virtual USB COM"; não está confirmado que o Windows crie uma COM padrão acessível ao pyserial.
