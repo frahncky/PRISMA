@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
@@ -466,14 +466,25 @@ class FeaturesMixin:
             self.adc_table.setItem(row, 1, QTableWidgetItem(f"{value:.0f}"))
             self.adc_table.setCellWidget(row, 2, bar)
 
-    def export_report(self) -> None:
+    @staticmethod
+    def _png(widget) -> bytes:
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        widget.grab().save(buffer, "PNG")
+        return bytes(buffer.data())
+
+    def export_report(self, filename: str | None = None) -> None:
         if self.last_analysis is None:
             QMessageBox.information(self, "Relatório", "Aguarde uma análise válida.")
             return
-        filename, _ = QFileDialog.getSaveFileName(self, "Relatório HTML", "relatorio-prisma.html", "HTML (*.html)")
+        if filename is None:
+            default = f"relatorio-prisma-{datetime.now():%Y%m%d-%H%M%S}.html"
+            filename, _ = QFileDialog.getSaveFileName(self, "Relatório HTML", default, "HTML (*.html)")
         if filename:
+            images = {"Osciloscópio": self._png(self.wave), "Fasores (referência: fase A)": self._png(self.phasor),
+                      "Harmônicas da fase A": self._png(self.harmonics)}
             try:
-                write_report(Path(filename), *self.last_analysis)
+                write_report(Path(filename), *self.last_analysis, images=images)
                 self._log(f"Relatório salvo: {filename}")
             except OSError as exc:
                 QMessageBox.critical(self, "Relatório", str(exc))

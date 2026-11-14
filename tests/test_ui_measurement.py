@@ -352,3 +352,14 @@ def test_rajadas_gravadas_com_tempo_real_crescente(window):
     assert abs((first[1] - first[0]) - 0.0005) < 1e-12
     assert second[0] > first[-1]
     assert abs((second[0] - first[0]) - 0.8) < 1e-9
+
+
+def test_relatorio_html_embute_graficos_e_angulos(window, tmp_path):
+    for _ in range(6):
+        window._generate_demo_batch()
+    window._draw_signals()
+    target = tmp_path / "relatorio.html"
+    window.export_report(str(target))
+    html = target.read_text(encoding="utf-8")
+    assert html.count("data:image/png;base64,") == 3
+    assert "Ângulo (ref. A)" in html and "0.0°" in html and "-120.0°" in html

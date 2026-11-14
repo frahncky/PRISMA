@@ -38,6 +38,7 @@ _ICONS = {
     "open": '<path d="M3 7h6l2 2h10v10H3z"/>',
     "save": '<path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/>',
     "flash": '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+    "report": '<path d="M6 3h9l4 4v14H6z"/><path d="M14 3v5h5M9 17v-3M12 17v-6M15 17v-2"/>',
     "record": '<circle cx="12" cy="12" r="6"/>',
 }
 
