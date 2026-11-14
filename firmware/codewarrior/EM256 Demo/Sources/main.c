@@ -30,6 +30,16 @@ const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 #define SCI3_SBR ((byte)((PRISMA_BUS_HZ / 16UL + PRISMA_SCI_BAUD / 2UL) / PRISMA_SCI_BAUD))
 #define ADC_WAIT_LIMIT 2000UL
 
+/* 1: rajadas no protocolo binário v2 (A5 5A + CRC16, docs/protocolo.md).
+ * 0: rajadas em JSON hex, formato anterior validado em bancada.
+ * Mensagens de status continuam em JSON ASCII nos dois modos. */
+#ifndef PRISMA_BINARY
+#define PRISMA_BINARY 1
+#endif
+#if PRISMA_BINARY
+#include "../../../include/prisma_frame_stream.h"
+#endif
+
 static byte adc_timeout;
 
 static void InitSystems(void)
@@ -304,6 +314,32 @@ static void SCI3_PutULong(unsigned long value)
   }
 }
 
+#if PRISMA_BINARY
+static void SCI3_PutByte(unsigned char value)
+{
+  while (SCI3S1_TDRE == 0U) {
+  }
+  SCI3D = value;
+}
+
+/* Protocolo binário v2: 3019 bytes por rajada (contra ~3150 do JSON hex),
+ * CRC16 calculado durante o envio, sem buffer extra. */
+static void Burst_Send(void)
+{
+  prisma_stream s;
+  word i;
+  byte c;
+
+  prisma_stream_begin_burst(&s, SCI3_PutByte, (unsigned long)burst_seq, BURST_FS_MHZ,
+                            (unsigned short)BURST_SAMPLES, 0x07U, (unsigned char)(adc_timeout & 0x07U));
+  for (i = 0U; i < BURST_SAMPLES; ++i) {
+    for (c = 0U; c < 3U; ++c) {
+      prisma_stream_word(&s, burst_data[i][c]);
+    }
+  }
+  prisma_stream_end(&s);
+}
+#else
 static void Burst_Send(void)
 {
   word i;
@@ -325,6 +361,7 @@ static void Burst_Send(void)
   }
   SCI3_PutString("\"}\r\n");
 }
+#endif
 
 void main(void)
 {

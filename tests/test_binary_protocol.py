@@ -142,3 +142,33 @@ def test_perfil_antigo_sem_delay_continua_valido_e_chave_extra_rejeitada(tmp_pat
     cal.save(path)
     assert Calibration.load(path).delays_s() == {"ia": pytest.approx(12.5e-6)}
     assert math.isfinite(cal.delays_s()["ia"])
+
+
+def test_envio_em_fluxo_do_firmware_igual_ao_python(tmp_path):
+    """prisma_frame_stream.h (usado no main.c da DEMOEM) gera o mesmo quadro."""
+    if not shutil.which("gcc"):
+        pytest.skip("GCC não instalado")
+    source = tmp_path / "stream_test.c"
+    source.write_text(r'''
+#include <stdio.h>
+#include "prisma_frame_stream.h"
+static void put(unsigned char b) { printf("%02X", b); }
+int main(void) {
+    prisma_stream s;
+    unsigned short i;
+    prisma_stream_begin_burst(&s, put, 65535UL, 1995487UL, 500U, 0x07U, 4U);
+    for (i = 0U; i < 1500U; ++i) prisma_stream_word(&s, (unsigned short)(i * 43U));
+    prisma_stream_end(&s);
+    return 0;
+}
+''', encoding="utf-8")
+    exe = tmp_path / "stream_test"
+    subprocess.run(["gcc", "-std=c89", "-pedantic", "-Wall", "-Wextra", "-Werror", "-Wno-unused-function",
+                    "-Ifirmware/include", str(source), "-o", str(exe)], cwd=ROOT, check=True, capture_output=True)
+    output = bytes.fromhex(subprocess.run([str(exe)], check=True, capture_output=True, text=True).stdout)
+    values = [(i * 43) & 0xFFFF for i in range(1500)]
+    rows = [tuple(values[3 * k:3 * k + 3]) for k in range(500)]
+    assert output == encode_burst(65535, 1995.487, rows, timeout_mask=4)
+    [block] = StreamDecoder().feed(output)
+    assert block.seq == 65535 and len(block.samples) == 500 and block.timeout_mask == 4
+    assert len(output) == 3019
