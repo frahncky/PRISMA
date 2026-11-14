@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-label="PRISMA — Programar. Medir. Analisar.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0b1020"/>
+      <stop offset="1" stop-color="#141c34"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="prism" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9fb4ff" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#4b5fa8" stop-opacity="0.15"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0H0V40" fill="none" stroke="#ffffff" stroke-opacity="0.04"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="300" rx="18" fill="url(#bg)"/>
+  <rect width="1200" height="300" rx="18" fill="url(#grid)"/>
+
+  <!-- feixe de entrada -->
+  <path d="M0 168 L118 150" stroke="url(#beam)" stroke-width="4" stroke-linecap="round"/>
+  <!-- prisma -->
+  <path d="M110 220 L170 80 L230 220 Z" fill="url(#prism)" stroke="#c9d4ff" stroke-width="2.5" stroke-linejoin="round"/>
+  <!-- espectro trifásico saindo do prisma como ondas -->
+  <g fill="none" stroke-width="3.5" stroke-linecap="round">
+    <path d="M205 140 C 260 100, 300 100, 340 140 S 420 180, 460 140 S 540 100, 580 140" stroke="#ff5d6c"/>
+    <path d="M205 152 C 260 192, 300 192, 340 152 S 420 112, 460 152 S 540 192, 580 152" stroke="#ffc94d" opacity="0.95"/>
+    <path d="M205 164 C 240 124, 290 214, 340 164 S 420 124, 460 164 S 530 214, 580 164" stroke="#4dc3ff" opacity="0.95"/>
+  </g>
+
+  <text x="640" y="150" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="78" font-weight="700" letter-spacing="10" fill="#ffffff">PRISMA</text>
+  <text x="643" y="190" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="22" fill="#aab6dd">Programar · Medir · Analisar</text>
+  <text x="643" y="228" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#6f7ca8">Instrumentação trifásica · DEMOEM / ColdFire MCF51EM256</text>
+</svg>
