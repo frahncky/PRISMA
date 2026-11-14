@@ -73,3 +73,18 @@ def test_rejeita_amostras_nao_finitas(invalid):
     t[3] = invalid
     with pytest.raises(ValueError, match="valores finitos"):
         analyze(t, values)
+
+
+def test_ganho_de_calibracao_por_referencia(tmp_path):
+    import pytest
+    from prisma.core.calibration import Calibration, gains_from_reference
+
+    gains = gains_from_reference({"va": 3.3 / 65535, "vb": 1.0}, {"va": 0.75, "vb": 100.0}, {"va": 127.0, "vb": 0.0})
+    assert gains == {"va": pytest.approx(3.3 / 65535 * 127.0 / 0.75)}
+    with pytest.raises(ValueError):
+        gains_from_reference({"va": 1.0}, {"va": 0.0}, {"va": 10.0})
+    with pytest.raises(ValueError):
+        gains_from_reference({"va": 1.0}, {"va": 1.0}, {"va": 0.0})
+    cal = Calibration({"va": {"gain": 2.0, "offset": 0.0}}, "Bancada")
+    cal.save(tmp_path / "c.json")
+    assert Calibration.load(tmp_path / "c.json").channels == cal.channels

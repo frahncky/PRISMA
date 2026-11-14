@@ -40,3 +40,30 @@ class Calibration:
         if any(not math.isfinite(value) for value in adjusted.values()):
             raise ValueError("Calibração produziu valor não finito")
         return replace(sample, **adjusted)
+
+    def to_dict(self) -> dict:
+        return {"version": 1, "name": self.name, "channels": self.channels}
+
+    def save(self, path: Path) -> None:
+        path.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def gains_from_reference(base_gain: dict[str, float], shown_rms: dict[str, float],
+                         measured_rms: dict[str, float]) -> dict[str, float]:
+    """Ganho novo por canal a partir de uma leitura de referência (multímetro).
+
+    O RMS exibido resulta de ``entrada × base_gain``; para que passe a valer
+    ``measured_rms``, o ganho vira ``base_gain × medido / exibido``. Canais com
+    medida zero ficam de fora.
+    """
+    result = {}
+    for channel, measured in measured_rms.items():
+        if measured <= 0:
+            continue
+        shown = shown_rms.get(channel)
+        if shown is None or not math.isfinite(shown) or shown <= 0:
+            raise ValueError(f"Sem leitura válida no canal {channel} para calibrar")
+        result[channel] = base_gain[channel] * measured / shown
+    if not result:
+        raise ValueError("Informe ao menos uma tensão medida maior que zero")
+    return result

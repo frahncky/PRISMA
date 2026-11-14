@@ -244,3 +244,20 @@ def test_pagina_hardware_mostra_rajada_bruta_e_saturacao(window):
     assert window.burst_table.item(1, 6).text() == "300"
     assert window.burst_table.item(2, 4).text() == f"{1000 * 3.3 / 65535:.3f} V"
     assert "Rajada 3" in window.hardware_summary.text()
+
+
+def test_calibrar_com_multimetro_ajusta_rms_exibido(window, tmp_path):
+    from prisma.core.calibration import Calibration
+
+    for _ in range(6):
+        window._generate_demo_batch()
+    window._draw_signals()
+    target = tmp_path / "cal.json"
+    window.calibrate_from_reference({"va": 220.0, "vb": 0.0, "vc": 0.0}, str(target))
+    assert Calibration.load(target).channels["va"]["gain"] > 1.5
+    window.buffer.clear()
+    for _ in range(6):
+        window._generate_demo_batch()
+    window._draw_signals()
+    assert abs(window.last_analysis[0].rms["A"] - 220.0) < 1.0
+    assert abs(window.last_analysis[0].rms["B"] - 127.0) < 1.0

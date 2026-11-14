@@ -1,4 +1,5 @@
 """Ferramentas de aquisição, análise, histórico e desenvolvimento."""
+from datetime import datetime
 import json
 from pathlib import Path
 import sqlite3
@@ -6,12 +7,12 @@ import sqlite3
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
+    QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
-from prisma.core.calibration import Calibration
+from prisma.core.calibration import Calibration, gains_from_reference
 import pyqtgraph as pg
 
 from prisma.ui import theme
@@ -45,6 +46,7 @@ class FeaturesMixin:
             ("Exportar relatório HTML…", self.export_report),
             ("Salvar diagnóstico serial/USB…", self.save_inventory),
             ("Carregar perfil de dispositivo…", self.load_device),
+            ("Calibrar com multímetro…", self.calibrate_from_reference),
             ("Carregar calibração…", self.load_calibration),
             ("Restaurar calibração identidade", self.reset_calibration),
         ):
@@ -95,6 +97,10 @@ class FeaturesMixin:
         status, form = card("FONTE E CALIBRAÇÃO")
         form.addRow(self._muted("Dispositivo"), self.profile_label)
         form.addRow(self._muted("Calibração"), self.calibration_label)
+        calibrate = QPushButton("Calibrar com multímetro…")
+        calibrate.setToolTip("Informe a tensão RMS medida em cada fase; o PRISMA calcula o ganho dos canais.")
+        calibrate.clicked.connect(self.calibrate_from_reference)
+        form.addRow("", calibrate)
         form.addRow(self._muted("Fasor selecionado"), self.selected_phasor)
         cards.addWidget(status, stretch=1)
         page.addLayout(cards)
@@ -281,6 +287,70 @@ class FeaturesMixin:
         self.board_label.setText(profile.name)
         self.profile_label.setText(f"{profile.name} · {profile.baudrate} baud")
         self._log(f"Perfil carregado: {profile.name}; protocolo {profile.protocol}")
+
+    def _calibration_base_gains(self) -> dict[str, float]:
+        """Ganho que leva a entrada do canal ao valor exibido hoje."""
+        from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
+        default = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else 1.0
+        return {ch: self.calibration.channels.get(ch, {}).get("gain", default) for ch in ("va", "vb", "vc")}
+
+    def calibrate_from_reference(self, measured: dict[str, float] | None = None,
+                                 filename: str | None = None) -> None:
+        if self.last_analysis is None:
+            QMessageBox.information(self, "Calibração", "Aguarde uma análise válida (sinal estável na tela).")
+            return
+        result = self.last_analysis[0]
+        shown = {"va": result.rms["A"], "vb": result.rms["B"], "vc": result.rms["C"]}
+        if measured is None:
+            dialog = QDialog(self)
+            dialog.setWindowTitle("Calibrar com multímetro")
+            layout = QVBoxLayout(dialog)
+            intro = QLabel("Meça a tensão RMS de cada fase com um instrumento de referência e informe abaixo. "
+                           "Deixe 0 para não alterar um canal. Mantenha o sinal estável durante a medição.")
+            intro.setWordWrap(True)
+            layout.addWidget(intro)
+            form = QFormLayout()
+            spins = {}
+            for channel, phase in (("va", "A"), ("vb", "B"), ("vc", "C")):
+                spin = QDoubleSpinBox()
+                spin.setRange(0, 100000)
+                spin.setDecimals(3)
+                spin.setSuffix(" V")
+                spin.setFixedWidth(160)
+                spins[channel] = spin
+                form.addRow(self._muted(f"Fase {phase} · exibido {shown[channel]:.3f} V · medido"), spin)
+            layout.addLayout(form)
+            buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+            buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Calibrar")
+            buttons.accepted.connect(dialog.accept)
+            buttons.rejected.connect(dialog.reject)
+            layout.addWidget(buttons)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            measured = {channel: spin.value() for channel, spin in spins.items()}
+        try:
+            gains = gains_from_reference(self._calibration_base_gains(), shown, measured)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Calibração", str(exc))
+            return
+        channels = {ch: dict(cfg) for ch, cfg in self.calibration.channels.items()}
+        base = self._calibration_base_gains()
+        for channel in ("va", "vb", "vc"):
+            channels.setdefault(channel, {"gain": base[channel], "offset": 0.0})
+        for channel, gain in gains.items():
+            channels[channel]["gain"] = gain
+        name = f"Bancada {datetime.now():%Y-%m-%d %H:%M}"
+        calibration = Calibration(channels, name)
+        if filename is None:
+            filename, _ = QFileDialog.getSaveFileName(self, "Salvar calibração", "calibracao-demoem.json", "JSON (*.json)")
+        if filename:
+            try:
+                calibration.save(Path(filename))
+                self._log(f"Calibração salva: {filename}")
+            except OSError as exc:
+                QMessageBox.critical(self, "Calibração", str(exc))
+        self._set_calibration(calibration)
+        self._log("Ganhos calibrados: " + ", ".join(f"{ch} = {g:.6g}" for ch, g in gains.items()))
 
     def load_calibration(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(self, "Calibração", "", "JSON (*.json)")
