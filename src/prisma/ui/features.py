@@ -3,10 +3,11 @@ import json
 from pathlib import Path
 import sqlite3
 
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFileDialog, QFormLayout,
-    QHBoxLayout, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -49,37 +50,78 @@ class FeaturesMixin:
             acquisition_menu.addAction(action)
 
         analysis = QWidget()
-        form = QFormLayout(analysis)
+        page = QVBoxLayout(analysis)
+        page.setContentsMargins(20, 16, 20, 16)
+        page.setSpacing(14)
         self.frequency_combo = QComboBox()
         self.frequency_combo.addItems(["60 Hz", "50 Hz", "Automática (40–70 Hz)"])
         self.window_combo = QComboBox()
         self.window_combo.addItems(["Retangular", "Hann"])
         self.phasor_reference = QComboBox()
         self.phasor_reference.addItems(["Absoluta", "Fase A", "Fase B", "Fase C"])
+        for combo in (self.frequency_combo, self.window_combo, self.phasor_reference):
+            combo.setFixedWidth(240)
         self.selected_phasor = QLabel("Clique na ponta de um fasor para inspecionar.")
         self.selected_phase = None
         self.calibration_label = QLabel("Identidade · sem ajuste")
         self.profile_label = QLabel(self.device_profile.name)
-        form.addRow("Frequência fundamental", self.frequency_combo)
-        form.addRow("Janela do ajuste harmônico", self.window_combo)
-        form.addRow("Referência visual dos fasores", self.phasor_reference)
-        form.addRow("Fasor selecionado", self.selected_phasor)
-        form.addRow("Calibração ativa", self.calibration_label)
-        form.addRow("Dispositivo serial", self.profile_label)
-        note = QLabel("Potências exigem ia, ib e ic sincronizadas com va, vb e vc.\n"
-                      "Q1 é a potência reativa da fundamental. RMS, P e S usam os sinais AC.\n"
-                      "Carregar um perfil de calibração não certifica a cadeia de medição.")
-        note.setWordWrap(True)
-        form.addRow(note)
+        for label in (self.selected_phasor, self.calibration_label, self.profile_label):
+            label.setStyleSheet("color: #e6edf5;")
+
+        def card(title: str) -> tuple[QFrame, QFormLayout]:
+            frame = QFrame()
+            frame.setObjectName("card")
+            outer = QVBoxLayout(frame)
+            outer.setContentsMargins(18, 14, 18, 16)
+            outer.setSpacing(10)
+            outer.addWidget(self._section(title))
+            form = QFormLayout()
+            form.setVerticalSpacing(10)
+            form.setHorizontalSpacing(24)
+            form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+            outer.addLayout(form)
+            return frame, form
+
+        cards = QHBoxLayout()
+        cards.setSpacing(14)
+        settings, form = card("PARÂMETROS DA ANÁLISE")
+        form.addRow(self._muted("Frequência fundamental"), self.frequency_combo)
+        form.addRow(self._muted("Janela do ajuste harmônico"), self.window_combo)
+        form.addRow(self._muted("Referência dos fasores"), self.phasor_reference)
+        cards.addWidget(settings, stretch=1)
+        status, form = card("FONTE E CALIBRAÇÃO")
+        form.addRow(self._muted("Dispositivo"), self.profile_label)
+        form.addRow(self._muted("Calibração"), self.calibration_label)
+        form.addRow(self._muted("Fasor selecionado"), self.selected_phasor)
+        cards.addWidget(status, stretch=1)
+        page.addLayout(cards)
+
+        power_card = QFrame()
+        power_card.setObjectName("card")
+        power_layout = QVBoxLayout(power_card)
+        power_layout.setContentsMargins(18, 14, 18, 16)
+        power_layout.addWidget(self._section("POTÊNCIAS POR FASE"))
         self.power_view = QTableWidget(3, 6)
         self.power_view.setHorizontalHeaderLabels(["Fase", "I RMS (A)", "P (W)", "Q1 (var)", "S (VA)", "FP"])
         self.power_view.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.power_view.setMaximumHeight(170)
-        form.addRow("Potências por fase", self.power_view)
+        self.power_view.verticalHeader().setVisible(False)
+        self.power_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.power_view.setFixedHeight(150)
+        self.power_view.setShowGrid(False)
+        power_layout.addWidget(self.power_view)
+        note = self._muted("Potências exigem ia, ib e ic sincronizadas com va, vb e vc. Q1 é a potência reativa "
+                           "da fundamental; RMS, P e S usam os sinais AC. Uma calibração carregada não certifica "
+                           "a cadeia de medição.")
+        note.setWordWrap(True)
+        power_layout.addWidget(note)
+        page.addWidget(power_card)
+        page.addStretch(1)
         self.tabs.addTab(analysis, "Análise")
 
         hardware = QWidget()
         hw_layout = QVBoxLayout(hardware)
+        hw_layout.setContentsMargins(20, 16, 20, 12)
+        hw_layout.setSpacing(10)
         self.hardware_summary = QLabel("Sem telemetria de estados.")
         self.hardware_summary.setObjectName("muted")
         self.hardware_summary.setWordWrap(True)
@@ -92,7 +134,7 @@ class FeaturesMixin:
         self.adc_table.setColumnWidth(0, 170)
         self.adc_table.setColumnWidth(1, 120)
         hw_layout.addWidget(self.adc_table, stretch=1)
-        hw_layout.addWidget(QLabel("Última mensagem de estado (JSON)"))
+        hw_layout.addWidget(self._section("ÚLTIMA MENSAGEM DE ESTADO (JSON)"))
         self.hardware_view = QPlainTextEdit()
         self.hardware_view.setReadOnly(True)
         self.hardware_view.setMaximumHeight(190)
@@ -102,6 +144,8 @@ class FeaturesMixin:
 
         development = QWidget()
         layout = QVBoxLayout(development)
+        layout.setContentsMargins(20, 16, 20, 12)
+        layout.setSpacing(10)
         row = QHBoxLayout()
         for label, handler in (
             ("Abrir projeto…", self.load_project), ("Cancelar operação", self.runner.cancel),
@@ -114,6 +158,8 @@ class FeaturesMixin:
             button = QPushButton(label)
             button.clicked.connect(handler)
             row.addWidget(button)
+        row.insertWidget(1, self.btn_compile)
+        row.insertWidget(2, self.btn_flash)
         layout.addLayout(row)
         self.project_label = QLabel("Abra um projeto PRISMA para configurar compilador, artefato e ferramentas.")
         self.project_label.setWordWrap(True)
@@ -124,18 +170,28 @@ class FeaturesMixin:
         layout.addWidget(self.build_view)
         self.map_view = QPlainTextEdit()
         self.map_view.setReadOnly(True)
-        layout.addWidget(QLabel("Mapa de memória produzido pela toolchain"))
+        layout.addWidget(self._section("MAPA DE MEMÓRIA"))
         layout.addWidget(self.map_view)
         self.tabs.addTab(development, "Build / depuração")
-        self._add_nav("Análise e potências", analysis)
-        self._add_nav("Hardware / ADC", hardware)
-        self._add_nav("Build e depuração", development)
-        self.btn_compile.setText("Compilar")
-        self.btn_flash.setText("Gravar BDM")
-        self.btn_compile.setToolTip("Abra um projeto na aba Build / depuração.")
+        self._add_nav("Análise", analysis, "analysis")
+        self._add_nav("Hardware / ADC", hardware, "chip")
+        self._add_nav("Build e gravação", development, "build")
+        self.btn_compile.setToolTip("Abra um projeto antes de compilar.")
         self.btn_flash.setToolTip("Requer build válido, gravador configurado e confirmação.")
         self.btn_compile.clicked.connect(self.build_project)
         self.btn_flash.clicked.connect(self.flash_project)
+
+    @staticmethod
+    def _muted(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("muted")
+        return label
+
+    @staticmethod
+    def _section(text: str) -> QLabel:
+        label = QLabel(text)
+        label.setObjectName("panelTitle")
+        return label
 
     def load_device(self) -> None:
         filename, _ = QFileDialog.getOpenFileName(self, "Perfil de dispositivo", "", "JSON (*.json)")

@@ -25,7 +25,7 @@ def test_demo_exibe_quinze_harmonicas(window):
     window._draw_signals()
     assert "h2–h15" in window.details.text()
     assert "---" not in window.metric_labels["A"].text()
-    assert "DADOS SINTÉTICOS" in window.details.text()
+    assert "Demonstração (sintético)" in window.details.text()
 
 
 @pytest.mark.parametrize("sample_rate, expected", [

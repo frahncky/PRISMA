@@ -22,9 +22,10 @@ from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
 from prisma.core.history import SqliteRecorder
+from prisma.ui import theme
 from prisma.ui.features import FeaturesMixin
 
-COLORS = {"A": "#4ad6ea", "B": "#f2b84b", "C": "#e27eaf"}
+COLORS = theme.PHASE
 # DEMOEM: ADC de 16 bits com VREFH = VDD do regulador de 3,3 V (confirmar com multímetro).
 ADC_VREF_V = 3.3
 ADC_FULL_SCALE = 65535
@@ -51,45 +52,7 @@ int main(void)
 }
 """
 
-STYLE = """
-QWidget { background: #0d1522; color: #e3edf6; font-family: 'Segoe UI'; font-size: 12px; }
-QMainWindow { background: #0d1522; }
-QLabel#title { font-size: 26px; font-weight: 800; color: #ffffff; letter-spacing: 3px; }
-QLabel { background: transparent; }
-QLabel#muted { color: #8ea3b8; }
-QLabel#section { color: #6f86a0; font-size: 10px; font-weight: 700; letter-spacing: 1.5px; padding-top: 6px; }
-QLabel#metricValue { font-size: 26px; font-weight: 700; }
-QLabel#chip { background: #3a2a10; border: 1px solid #c08a2c; border-radius: 11px; padding: 4px 10px; color: #ffd890; font-weight: 700; }
-QFrame#panel { background: #142133; border: 1px solid #22344a; border-radius: 12px; }
-QPushButton { background: #1a2d44; border: 1px solid #2c4560; border-radius: 7px; padding: 7px 12px; }
-QPushButton:hover { background: #22405e; border-color: #3d6488; }
-QPushButton:pressed { background: #163049; }
-QPushButton:checked { background: #5a3d12; border-color: #c08a2c; color: #ffd890; }
-QPushButton:disabled { background: #141f2d; color: #5d6f82; border-color: #1f2d3d; }
-QPushButton#primary { background: #0a7f9e; border-color: #17a9c4; font-weight: 700; color: #ffffff; }
-QPushButton#primary:hover { background: #0c93b6; }
-QPushButton#nav { text-align: left; background: transparent; border: none; border-radius: 7px; padding: 8px 10px; color: #bed3e2; }
-QPushButton#nav:hover { background: #1b2c42; color: #ffffff; }
-QPushButton#nav:checked { background: #1e3b57; color: #ffffff; border-left: 3px solid #4ad6ea; }
-QComboBox { background: #17263a; border: 1px solid #2c4560; padding: 6px 8px; border-radius: 6px; }
-QComboBox QAbstractItemView { background: #17263a; selection-background-color: #22405e; }
-QTabWidget::pane { border: 1px solid #22344a; border-radius: 10px; top: -1px; }
-QTabBar::tab { background: transparent; color: #8ea3b8; padding: 9px 16px; border-bottom: 2px solid transparent; }
-QTabBar::tab:hover { color: #e3edf6; }
-QTabBar::tab:selected { color: #ffffff; border-bottom: 2px solid #4ad6ea; }
-QPlainTextEdit { background: #09111c; color: #d8ecfc; border: 1px solid #22344a; border-radius: 8px; padding: 8px; }
-QTableWidget { background: #0f1a2a; gridline-color: #22344a; border: 1px solid #22344a; border-radius: 8px; }
-QHeaderView::section { background: #17263a; color: #9fb4ca; border: none; padding: 6px; font-weight: 600; }
-QSplitter::handle { background: #0d1522; width: 6px; }
-QMenuBar { background: #0d1522; }
-QMenuBar::item:selected { background: #1b2c42; }
-QMenu { background: #142133; border: 1px solid #2a3f57; }
-QMenu::item:selected { background: #22405e; }
-QStatusBar { background: #0a111c; color: #8ea3b8; }
-QScrollBar:vertical { background: transparent; width: 10px; }
-QScrollBar::handle:vertical { background: #2a3f57; border-radius: 5px; min-height: 24px; }
-QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
-"""
+STYLE = theme.STYLE
 
 
 class MainWindow(FeaturesMixin, QMainWindow):
@@ -102,7 +65,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.setWindowIcon(app_icon())
         self.paused = False
         self.raw_counts = False
-        pg.setConfigOptions(antialias=True, background="#132231", foreground="#b6cad9")
+        pg.setConfigOptions(antialias=True, background=theme.PLOT_BG, foreground=theme.MUTED)
         self.buffer = SignalBuffer()
         self.reader: SerialReader | None = None
         self.recorder: CsvRecorder | SqliteRecorder | None = None
@@ -195,228 +158,309 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self._log(f"Erro de escrita CSV: {exc}")
                 self.stop_recording()
 
-    @staticmethod
-    def _panel() -> tuple[QFrame, QVBoxLayout]:
+    def _card(self, caption: str, color: str = theme.TEXT, hint: str = "") -> tuple[QFrame, QLabel, QLabel]:
         frame = QFrame()
-        frame.setObjectName("panel")
+        frame.setObjectName("card")
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(14, 12, 14, 12)
-        layout.setSpacing(9)
-        return frame, layout
+        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setSpacing(2)
+        title = QLabel(caption)
+        title.setObjectName("cardCaption")
+        value = QLabel("—")
+        value.setObjectName("cardValue")
+        value.setStyleSheet(f"color: {color};")
+        sub = QLabel(hint)
+        sub.setObjectName("cardHint")
+        layout.addWidget(title)
+        layout.addWidget(value)
+        layout.addWidget(sub)
+        return frame, value, sub
+
+    @staticmethod
+    def _plot(title: str) -> pg.PlotWidget:
+        plot = pg.PlotWidget()
+        plot.setBackground(theme.PLOT_BG)
+        plot.setTitle(title, color=theme.MUTED, size="10pt")
+        plot.showGrid(x=True, y=True, alpha=0.12)
+        for axis in ("left", "bottom"):
+            plot.getAxis(axis).setPen(pg.mkPen(theme.BORDER))
+            plot.getAxis(axis).setTextPen(pg.mkPen(theme.MUTED))
+        plot.setMenuEnabled(False)
+        return plot
+
+    @staticmethod
+    def _wrap(widget: QWidget) -> QFrame:
+        frame = QFrame()
+        frame.setObjectName("card")
+        layout = QVBoxLayout(frame)
+        layout.setContentsMargins(6, 6, 6, 6)
+        layout.addWidget(widget)
+        return frame
 
     def _build_ui(self) -> None:
         root = QWidget()
         self.setCentralWidget(root)
-        main = QVBoxLayout(root)
-        main.setSpacing(11)
-        main.setContentsMargins(16, 12, 16, 12)
+        outer = QHBoxLayout(root)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        header = QHBoxLayout()
-        brand = QVBoxLayout()
+        # Barra lateral: marca, navegação e estado da conexão.
+        rail = QFrame()
+        rail.setObjectName("rail")
+        rail.setFixedWidth(210)
+        side = QVBoxLayout(rail)
+        side.setContentsMargins(14, 16, 14, 14)
+        side.setSpacing(4)
+        brand_row = QHBoxLayout()
         logo = QLabel()
-        logo.setPixmap(app_icon().pixmap(QSize(46, 46)))
-        header.addWidget(logo)
-        header.addSpacing(6)
-        title = QLabel("PRISMA")
-        title.setObjectName("title")
-        subtitle = QLabel("Plataforma de Registro, Instrumentação, Sinais, Medição e Análise")
-        subtitle.setObjectName("muted")
-        brand.addWidget(title)
-        brand.addWidget(subtitle)
-        header.addLayout(brand, stretch=1)
-        self.mode_label = QLabel(self.mode)
-        self.mode_label.setStyleSheet(
-            "color: #f4bf62; font-weight: 700; padding: 8px; background: #40351e; border-radius: 5px;"
-        )
-        self.pause_chip = QLabel("GRÁFICOS PAUSADOS")
-        self.pause_chip.setObjectName("chip")
-        self.pause_chip.setVisible(False)
-        header.addWidget(self.pause_chip)
-        header.addSpacing(6)
-        header.addWidget(self.mode_label)
-        main.addLayout(header)
-
-        toolbar = QHBoxLayout()
-        self.btn_open = QPushButton("Abrir C")
-        self.btn_save = QPushButton("Salvar C")
-        self.btn_compile = QPushButton("Compilar")
-        self.btn_flash = QPushButton("Gravar BDM")
-        for b in (self.btn_compile, self.btn_flash):
-            b.setEnabled(False)
-            b.setToolTip("Requer integração e validação da toolchain ColdFire V1/BDM.")
-        self.btn_open.clicked.connect(self.open_code)
-        self.btn_save.clicked.connect(self.save_code)
-        self.btn_pause = QPushButton("Pausar")
-        self.btn_pause.setCheckable(True)
-        self.btn_pause.setToolTip("Congela os gráficos sem interromper a aquisição ou o registro (Espaço).")
-        self.btn_pause.clicked.connect(lambda _=False: self.toggle_pause())
-        self.btn_snapshot = QPushButton("Exportar imagem")
-        self.btn_snapshot.setToolTip("Salva os instrumentos como PNG (Ctrl+Shift+S).")
-        self.btn_snapshot.clicked.connect(lambda _=False: self.export_snapshot())
-        for btn in (self.btn_open, self.btn_save, self.btn_compile, self.btn_flash):
-            toolbar.addWidget(btn)
-        toolbar.addSpacing(12)
-        toolbar.addWidget(self.btn_pause)
-        toolbar.addWidget(self.btn_snapshot)
-        toolbar.addStretch(1)
-        self.port_combo = QComboBox()
-        self.port_combo.setMinimumWidth(150)
-        toolbar.addWidget(self.port_combo)
-        refresh = QPushButton("Atualizar COM")
-        refresh.clicked.connect(self.refresh_ports)
-        toolbar.addWidget(refresh)
-        self.b_connect = QPushButton("Conectar serial")
-        self.b_connect.setObjectName("primary")
-        self.b_connect.clicked.connect(self.connect_serial)
-        toolbar.addWidget(self.b_connect)
-        demo_button = QPushButton("Modo demo")
-        demo_button.clicked.connect(self.start_demo)
-        toolbar.addWidget(demo_button)
-        main.addLayout(toolbar)
-
-        body = QSplitter(Qt.Orientation.Horizontal)
-        self.nav_buttons: list[QPushButton] = []
+        logo.setPixmap(app_icon().pixmap(QSize(34, 34)))
+        brand_row.addWidget(logo)
+        names = QVBoxLayout()
+        names.setSpacing(0)
+        brand = QLabel("PRISMA")
+        brand.setObjectName("brand")
+        sub = QLabel("Programar · Medir · Analisar")
+        sub.setObjectName("brandSub")
+        names.addWidget(brand)
+        names.addWidget(sub)
+        brand_row.addLayout(names, stretch=1)
+        side.addLayout(brand_row)
+        side.addSpacing(18)
+        self.nav_buttons: list[tuple[QPushButton, QWidget]] = []
         self._nav_layout = QVBoxLayout()
         self._nav_layout.setSpacing(2)
-        sidebar, side = self._panel()
-        sidebar.setMinimumWidth(235)
-        sidebar.setMaximumWidth(320)
-        hw_title = QLabel("HARDWARE-ALVO")
-        hw_title.setObjectName("section")
-        side.addWidget(hw_title)
-        board = QLabel("DEMOEM\nMCF51EM256")
-        self.board_label = board
-        board.setWordWrap(True)
-        board.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        board.setStyleSheet(
-            "font-size: 20px; font-weight: 700; color: #4ad6ea;"
-            "background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #10243a, stop:1 #0c1828);"
-            "border: 1px solid #1f3a55; border-radius: 10px; padding: 20px 8px"
-        )
-        side.addWidget(board)
-        self.hw_status = QLabel("● Serial: não conectada")
-        self.hw_status.setStyleSheet("color: #f5bf69;")
-        side.addWidget(self.hw_status)
-        nav_title = QLabel("NAVEGAÇÃO")
-        nav_title.setObjectName("section")
-        side.addWidget(nav_title)
         side.addLayout(self._nav_layout)
         side.addStretch(1)
-        note = QLabel("Medições sem certificação metrológica.\nDados reais dependem de firmware e calibração.")
-        note.setWordWrap(True)
-        note.setObjectName("muted")
-        side.addWidget(note)
-        body.addWidget(sidebar)
+        section = QLabel("DISPOSITIVO")
+        section.setObjectName("railSection")
+        side.addWidget(section)
+        self.board_label = QLabel("DEMOEM · MCF51EM256")
+        self.board_label.setWordWrap(True)
+        self.board_label.setStyleSheet(f"color: {theme.TEXT}; font-weight: 600;")
+        side.addWidget(self.board_label)
+        self.hw_status = QLabel()
+        side.addWidget(self.hw_status)
+        self._set_link_status("Serial desconectada", theme.SUBTLE)
+        version = QLabel(f"v{__version__}")
+        version.setObjectName("brandSub")
+        side.addSpacing(8)
+        side.addWidget(version)
+        outer.addWidget(rail)
+
+        content = QVBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
+        outer.addLayout(content, stretch=1)
+
+        # Barra superior: título da página, estado e conexão.
+        topbar = QFrame()
+        topbar.setObjectName("topbar")
+        top = QHBoxLayout(topbar)
+        top.setContentsMargins(20, 12, 16, 12)
+        top.setSpacing(8)
+        self.page_title = QLabel("Instrumentação")
+        self.page_title.setObjectName("pageTitle")
+        top.addWidget(self.page_title)
+        top.addSpacing(10)
+        self.mode_label = QLabel()
+        self.mode_label.setObjectName("pill")
+        top.addWidget(self.mode_label)
+        self.pause_chip = QLabel("Pausado")
+        self.pause_chip.setObjectName("pill")
+        self.pause_chip.setStyleSheet(theme.pill_style("pause"))
+        self.pause_chip.setVisible(False)
+        top.addWidget(self.pause_chip)
+        top.addStretch(1)
+        self.btn_pause = QPushButton()
+        self.btn_pause.setObjectName("icon")
+        self.btn_pause.setCheckable(True)
+        self.btn_pause.setIcon(theme.icon("pause"))
+        self.btn_pause.setToolTip("Pausar gráficos (Espaço). A aquisição e o registro continuam.")
+        self.btn_pause.clicked.connect(lambda _=False: self.toggle_pause())
+        self.btn_snapshot = QPushButton()
+        self.btn_snapshot.setObjectName("icon")
+        self.btn_snapshot.setIcon(theme.icon("camera"))
+        self.btn_snapshot.setToolTip("Exportar imagem dos instrumentos (Ctrl+Shift+S)")
+        self.btn_snapshot.clicked.connect(lambda _=False: self.export_snapshot())
+        top.addWidget(self.btn_pause)
+        top.addWidget(self.btn_snapshot)
+        top.addSpacing(10)
+        self.port_combo = QComboBox()
+        self.port_combo.setMinimumWidth(190)
+        self.port_combo.setToolTip("Porta serial da placa")
+        top.addWidget(self.port_combo)
+        refresh = QPushButton()
+        refresh.setObjectName("icon")
+        refresh.setIcon(theme.icon("refresh"))
+        refresh.setToolTip("Atualizar portas COM")
+        refresh.clicked.connect(self.refresh_ports)
+        top.addWidget(refresh)
+        self.b_connect = QPushButton("Conectar")
+        self.b_connect.setObjectName("primary")
+        self.b_connect.setIcon(theme.icon("plug", "#ffffff"))
+        self.b_connect.clicked.connect(self.connect_serial)
+        top.addWidget(self.b_connect)
+        self.btn_demo = QPushButton("Demo")
+        self.btn_demo.setIcon(theme.icon("wave"))
+        self.btn_demo.setToolTip("Sinais trifásicos sintéticos, sem placa")
+        self.btn_demo.clicked.connect(self.start_demo)
+        top.addWidget(self.btn_demo)
+        content.addWidget(topbar)
+
+        # Ações que pertencem a outras páginas (posicionadas nelas).
+        self.btn_open = QPushButton("Abrir")
+        self.btn_open.setIcon(theme.icon("open"))
+        self.btn_open.clicked.connect(self.open_code)
+        self.btn_save = QPushButton("Salvar")
+        self.btn_save.setIcon(theme.icon("save"))
+        self.btn_save.clicked.connect(self.save_code)
+        self.btn_compile = QPushButton("Compilar")
+        self.btn_compile.setIcon(theme.icon("build"))
+        self.btn_flash = QPushButton("Gravar")
+        self.btn_flash.setIcon(theme.icon("flash"))
+        for b in (self.btn_compile, self.btn_flash):
+            b.setEnabled(False)
 
         self.tabs = QTabWidget()
+        self.tabs.tabBar().hide()
         self.tabs.currentChanged.connect(self._sync_nav)
-        body.addWidget(self.tabs)
-        body.setStretchFactor(1, 1)
-        main.addWidget(body, stretch=1)
+        content.addWidget(self.tabs, stretch=1)
 
+        # Página de instrumentação.
         dashboard = QWidget()
-        dash_layout = QVBoxLayout(dashboard)
-        dash_layout.setContentsMargins(10, 11, 10, 10)
+        dash = QVBoxLayout(dashboard)
+        dash.setContentsMargins(20, 16, 20, 12)
+        dash.setSpacing(12)
         metrics = QHBoxLayout()
+        metrics.setSpacing(12)
         self.metric_labels = {}
         for phase in ("A", "B", "C"):
-            card, card_layout = self._panel()
-            caption = QLabel("FASE " + phase + " · TENSÃO RMS")
-            caption.setObjectName("muted")
-            value = QLabel("--- V")
-            value.setObjectName("metricValue")
-            value.setStyleSheet(f"color: {COLORS[phase]}; font-size: 26px; font-weight: 700;")
-            card_layout.addWidget(caption)
-            card_layout.addWidget(value)
+            card, value, _ = self._card(f"Fase {phase} · RMS", theme.PHASE[phase], "tensão")
+            value.setText("--- V")
             metrics.addWidget(card)
             self.metric_labels[phase] = value
-        info_card, info_layout = self._panel()
-        caption = QLabel("FREQUÊNCIA")
-        caption.setObjectName("muted")
-        info_layout.addWidget(caption)
-        self.frequency_label = QLabel("60 Hz (referência)")
-        self.frequency_label.setStyleSheet("font-size: 22px; font-weight: 700; color: #ffffff;")
-        info_layout.addWidget(self.frequency_label)
-        metrics.addWidget(info_card)
-        dash_layout.addLayout(metrics)
+        card, self.frequency_label, self.frequency_hint = self._card("Frequência", hint="fundamental")
+        metrics.addWidget(card)
+        card, self.thd_label, self.thd_hint = self._card("THD · fase A", hint="h2 a h15")
+        metrics.addWidget(card)
+        dash.addLayout(metrics)
 
-        charts = QGridLayout()
-        charts.setSpacing(10)
-        self.wave = pg.PlotWidget(title="OSCILOSCÓPIO · Va / Vb / Vc")
+        self.wave = self._plot("Osciloscópio")
         self.wave.setLabel("left", "Tensão", units="V")
         self.wave.setLabel("bottom", "Tempo", units="s")
-        self.wave.showGrid(x=True, y=True, alpha=0.18)
-        self.wave.addLegend(offset=(10, 10))
         self.curves = {
-            phase: self.wave.plot(pen=pg.mkPen(COLORS[phase], width=2), name=phase)
+            phase: self.wave.plot(pen=pg.mkPen(theme.PHASE[phase], width=2), name=f"Fase {phase}")
             for phase in ("A", "B", "C")
         }
-        self.wave.setMinimumHeight(225)
+        scope_card = QFrame()
+        scope_card.setObjectName("card")
+        scope_layout = QVBoxLayout(scope_card)
+        scope_layout.setContentsMargins(10, 8, 10, 8)
+        scope_head = QHBoxLayout()
+        scope_title = QLabel("OSCILOSCÓPIO")
+        scope_title.setObjectName("panelTitle")
+        scope_head.addWidget(scope_title)
+        scope_head.addStretch(1)
+        scope_head.addWidget(QLabel("Janela"))
+        self.cycles_combo = QComboBox()
+        self.cycles_combo.addItems(["2 ciclos", "4 ciclos", "8 ciclos", "250 ms"])
+        self.cycles_combo.setCurrentIndex(1)
+        scope_head.addWidget(self.cycles_combo)
+        scope_layout.addLayout(scope_head)
+        self.wave.setTitle(None)
+        self.wave.setMinimumHeight(240)
+        scope_layout.addWidget(self.wave)
+        dash.addWidget(scope_card, stretch=11)
 
-        self.phasor = pg.PlotWidget(title="DIAGRAMA FASORIAL · 60 Hz")
+        bottom = QHBoxLayout()
+        bottom.setSpacing(12)
+        self.phasor = self._plot("Fasores")
         self.phasor.setLabel("left", "Imaginário", units="V")
         self.phasor.setLabel("bottom", "Real", units="V")
-        self.phasor.showGrid(x=True, y=True, alpha=0.2)
         self.phasor.setAspectLocked(True)
         self.phasor.setXRange(-160, 160, padding=0)
         self.phasor.setYRange(-160, 160, padding=0)
-        self.phasor.setMinimumHeight(225)
-
-        self.harmonics = pg.PlotWidget(title="HARMÔNICAS · FASE A · h2 a h15")
+        self.harmonics = self._plot("Harmônicas · fase A")
         self.harmonics.setLabel("left", "% da fundamental")
-        self.harmonics.setLabel("bottom", "Ordem harmônica")
-        self.harmonics.showGrid(x=False, y=True, alpha=0.2)
+        self.harmonics.setLabel("bottom", "Ordem")
+        self.harmonics.showGrid(x=False, y=True, alpha=0.12)
         self.harmonics.setXRange(1.5, 15.5, padding=0)
-        self.harmonics.setMinimumHeight(225)
-
-        details, details_layout = self._panel()
-        details_layout.addWidget(QLabel("ANÁLISE ELÉTRICA"))
-        self.details = QLabel("Aguardando amostras...")
+        details_card = QFrame()
+        details_card.setObjectName("card")
+        details_layout = QVBoxLayout(details_card)
+        details_layout.setContentsMargins(16, 12, 16, 12)
+        details_title = QLabel("RESUMO")
+        details_title.setObjectName("panelTitle")
+        details_layout.addWidget(details_title)
+        self.details = QLabel("Aguardando amostras…")
         self.details.setObjectName("muted")
+        self.details.setTextFormat(Qt.TextFormat.RichText)
         self.details.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.details.setWordWrap(True)
-        details_layout.addWidget(self.details)
-        details_layout.addStretch(1)
-        charts.addWidget(self.wave, 0, 0)
-        charts.addWidget(self.phasor, 0, 1)
-        charts.addWidget(self.harmonics, 1, 0)
-        charts.addWidget(details, 1, 1)
-        charts.setColumnStretch(0, 1)
-        charts.setColumnStretch(1, 1)
-        dash_layout.addLayout(charts, stretch=1)
+        details_layout.addWidget(self.details, stretch=1)
+        bottom.addWidget(self._wrap(self.phasor), stretch=4)
+        bottom.addWidget(self._wrap(self.harmonics), stretch=5)
+        bottom.addWidget(details_card, stretch=4)
+        for widget in (bottom.itemAt(i).widget() for i in range(bottom.count())):
+            widget.setMaximumHeight(330)
+        dash.addLayout(bottom, stretch=9)
         self.tabs.addTab(dashboard, "Instrumentação")
 
+        # Página do editor de firmware.
+        editor_page = QWidget()
+        editor_layout = QVBoxLayout(editor_page)
+        editor_layout.setContentsMargins(20, 16, 20, 12)
+        editor_bar = QHBoxLayout()
+        self.file_label = QLabel("Sem arquivo · exemplo ilustrativo")
+        self.file_label.setObjectName("muted")
+        editor_bar.addWidget(self.file_label)
+        editor_bar.addStretch(1)
+        editor_bar.addWidget(self.btn_open)
+        editor_bar.addWidget(self.btn_save)
+        editor_layout.addLayout(editor_bar)
         self.editor = QPlainTextEdit(FIRMWARE_SKELETON)
         self.editor.setFont(QFont("Consolas", 12))
-        self.tabs.addTab(self.editor, "Firmware C (editor)")
-        self._add_nav("Instrumentação", dashboard)
-        self._add_nav("Firmware C", self.editor)
+        editor_layout.addWidget(self.editor)
+        self.editor_page = editor_page
+        self.tabs.addTab(editor_page, "Firmware C")
+        self._add_nav("Instrumentação", dashboard, "scope")
+        self._add_nav("Firmware C", editor_page, "code")
 
-        console_wrap, console_lay = self._panel()
-        console_title = QLabel("CONSOLE")
-        console_title.setObjectName("section")
-        console_lay.addWidget(console_title)
+        # Console recolhível.
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
-        self.console.setMaximumHeight(116)
         self.console.setFont(QFont("Consolas", 10))
-        console_lay.addWidget(self.console)
-        main.addWidget(console_wrap)
-        self.statusBar().showMessage(
-            f"PRISMA v{__version__} | Sinais simulados — nenhuma aquisição física ativa"
-        )
+        self.console.setFixedHeight(130)
+        self.console.setVisible(False)
+        console_wrap = QWidget()
+        console_layout = QVBoxLayout(console_wrap)
+        console_layout.setContentsMargins(20, 0, 20, 10)
+        console_layout.addWidget(self.console)
+        content.addWidget(console_wrap)
+        self.btn_console = QPushButton("Console")
+        self.btn_console.setObjectName("ghost")
+        self.btn_console.setIcon(theme.icon("terminal", theme.MUTED, 16))
+        self.btn_console.setCheckable(True)
+        self.btn_console.toggled.connect(self.console.setVisible)
+        self.statusBar().addPermanentWidget(self.btn_console)
+        self.statusBar().showMessage(f"PRISMA v{__version__} · sinais simulados")
+        self._set_mode(self.mode)
+
+    def _set_link_status(self, text: str, color: str) -> None:
+        self.hw_status.setText(f"<span style='color:{color}'>●</span> {text}")
+        self.hw_status.setStyleSheet(f"color: {theme.MUTED};")
 
     def _log(self, message: str) -> None:
         self.console.appendPlainText(message)
 
     def _set_mode(self, label: str, real: bool = False) -> None:
         self.mode = label
-        self.mode_label.setText(label)
-        fg, bg = ("#b9f9c5", "#1c533a") if real else ("#f4bf62", "#40351e")
-        self.mode_label.setStyleSheet(
-            f"color:{fg};background:{bg};font-weight:700;padding:8px;border-radius:5px"
-        )
-        self.statusBar().showMessage(label)
+        short = label.split(" — ")[0].capitalize()
+        kind = "real" if real else ("demo" if label.startswith("DEMONSTRAÇÃO") else "idle")
+        self.mode_label.setText(("● " if real else "") + short)
+        self.mode_label.setToolTip(label)
+        self.mode_label.setStyleSheet(theme.pill_style(kind))
+        self.statusBar().showMessage(label.capitalize())
 
     def refresh_ports(self) -> None:
         from serial.tools import list_ports
@@ -442,7 +486,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.reader = None
             self._on_disconnected()
             self._set_mode("DESCONECTADO — SEM AQUISIÇÃO")
-            self.b_connect.setText("Conectar serial")
+            self._connect_button(False)
             return
         port = self.port_combo.currentData()
         if port is None:
@@ -466,11 +510,17 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reader.message.connect(self._log)
         self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
         self.reader.start()
-        self.b_connect.setText("Desconectar")
+        self._connect_button(True)
+
+    def _connect_button(self, connected: bool) -> None:
+        self.b_connect.setText("Desconectar" if connected else "Conectar")
+        self.b_connect.setIcon(theme.icon("unplug" if connected else "plug", "#c8f5dc" if connected else "#ffffff"))
+        self.b_connect.setProperty("connected", connected)
+        self.b_connect.style().unpolish(self.b_connect)
+        self.b_connect.style().polish(self.b_connect)
 
     def _on_connected(self, port: str) -> None:
-        self.hw_status.setText(f"● Serial: {port} aberta")
-        self.hw_status.setStyleSheet("color: #7fe0a0;")
+        self._set_link_status(f"{port} conectada", theme.SUCCESS)
         self._set_mode(f"SERIAL {port} — AGUARDANDO AMOSTRAS")
 
     def _on_sample(self, sample: Sample) -> None:
@@ -524,9 +574,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
     def _on_disconnected(self) -> None:
         self.stop_recording()
-        self.hw_status.setText("● Serial: desconectada")
-        self.hw_status.setStyleSheet("color: #f5bf69;")
-        self.b_connect.setText("Conectar serial")
+        self._set_link_status("Serial desconectada", theme.SUBTLE)
+        self._connect_button(False)
         if not self.mode.startswith("DEMONSTRAÇÃO"):
             self._set_mode("SERIAL DESCONECTADA — DADOS RETIDOS")
 
@@ -542,9 +591,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         self.demo_index = 0
-        self.hw_status.setText("● Serial: não conectada")
-        self.hw_status.setStyleSheet("color: #f5bf69;")
-        self.b_connect.setText("Conectar serial")
+        self._set_link_status("Serial desconectada", theme.SUBTLE)
+        self._connect_button(False)
         self._set_mode("DEMONSTRAÇÃO — SINAIS SINTÉTICOS")
         if self.raw_counts:
             self.raw_counts = False
@@ -598,9 +646,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.last_analysis = None
             return
         x = t - t[-1]
+        span = self._scope_span()
+        keep = x >= -span
         for i, phase in enumerate(("A", "B", "C")):
-            self.curves[phase].setData(x, values[:, i])
-        self.wave.setXRange(-0.25, 0.0, padding=0)
+            self.curves[phase].setData(x[keep], values[keep, i])
+        self.wave.setXRange(-span, 0.0, padding=0)
         if (t[-1] - t[0]) < 0.12:
             return
         try:
@@ -609,7 +659,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
             result = analyze(t, values, fundamental_hz=frequency, currents=self.buffer.currents(), window=window)
         except ValueError as exc:
             self.last_analysis = None
-            self.frequency_label.setText("Indisponível")
+            self.frequency_label.setText("—")
+            self.thd_label.setText("—")
             self.power_view.clearContents()
             for label in self.metric_labels.values():
                 label.setText("--- V")
@@ -617,17 +668,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.harmonics.clear()
             self.details.setText(f"Análise indisponível: {exc}")
             return
-        self.frequency_label.setText(f"{result.frequency_hz:.3f} Hz")
-        self.phasor.setTitle(f"DIAGRAMA FASORIAL · {result.frequency_hz:.3f} Hz")
+        self._last_frequency = result.frequency_hz
+        self.frequency_label.setText(f"{result.frequency_hz:.2f} Hz")
+        self.frequency_hint.setText(("automática" if self.frequency_combo.currentIndex() == 2 else "referência fixa"))
         for phase in ("A", "B", "C"):
             self.metric_labels[phase].setText(
                 f"{result.rms[phase]:.3f} V" if self._pin_volts() else f"{result.rms[phase]:.2f} V")
         self.phasor.clear()
         self.phasor.addItem(pg.InfiniteLine(
-            pos=0, angle=0, pen=pg.mkPen("#506579", width=1)
+            pos=0, angle=0, pen=pg.mkPen(theme.BORDER, width=1)
         ))
         self.phasor.addItem(pg.InfiniteLine(
-            pos=0, angle=90, pen=pg.mkPen("#506579", width=1)
+            pos=0, angle=90, pen=pg.mkPen(theme.BORDER, width=1)
         ))
         reference = self.phasor_reference.currentIndex()
         rotation = np.exp(-1j * np.angle(result.phasors[("A", "B", "C")[reference - 1]])) if reference else 1
@@ -650,49 +702,63 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if heights.size and result.thd_percent is not None:
             self.harmonics.addItem(pg.BarGraphItem(
                 x=np.arange(2, last_harmonic + 1), height=heights,
-                width=0.65, brush="#24bace"
+                width=0.6, brush=theme.ACCENT, pen=pg.mkPen(None)
             ))
             self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
-            self.harmonics.setTitle(f"HARMÔNICAS · FASE A · h2 a h{last_harmonic}")
+            self.harmonics.setTitle(f"Harmônicas · fase A · h2–h{last_harmonic}", color=theme.MUTED, size="10pt")
+            self.thd_label.setText(f"{result.thd_percent:.1f} %")
+            self.thd_hint.setText(f"h2 a h{last_harmonic}")
             thd = result.thd_percent
-            thd_text = f"THD estimada Va (h2–h{last_harmonic}): {thd:.2f} %"
+            thd_text = f"{thd:.2f} % (h2–h{last_harmonic})"
         else:
-            self.harmonics.setTitle("HARMÔNICAS · TAXA DE AMOSTRAGEM INSUFICIENTE")
+            self.harmonics.setTitle("Harmônicas · taxa insuficiente", color=theme.MUTED, size="10pt")
+            self.thd_label.setText("—")
             self.harmonics.setYRange(0, 5, padding=0)
-            thd_text = "THD indisponível: taxa insuficiente para h2 ou fundamental ausente."
-        angles = {p: np.degrees(np.angle(result.phasors[p])) for p in ("A", "B", "C")}
-        source = (
-            "DADOS SINTÉTICOS\nNão representam a DEMOEM física."
-            if self.mode.startswith("DEMONSTRAÇÃO")
-            else "DADOS DA PORTA SERIAL\nEscala e sincronismo dependem do firmware."
-        )
-        power_text = "Potências indisponíveis: sem correntes sincronizadas."
+            thd_text = "THD indisponível (taxa insuficiente)"
         self.power_view.clearContents()
+        rows = []
+        for phase in ("A", "B", "C"):
+            ph = result.phasors[phase]
+            rows.append((f"<span style='color:{COLORS[phase]}'>■</span> Fasor {phase}",
+                         f"{abs(ph):.3f} V ∠ {np.degrees(np.angle(ph)):.1f}°"))
         if result.power:
-            power_text = (f"ΣP {sum(p.active_w for p in result.power.values()):.1f} W · "
-                f"ΣQ1 {sum(p.reactive_fundamental_var for p in result.power.values()):.1f} var\n"
-                "Correntes, S e FP por fase: aba Análise.")
+            p_total = sum(p.active_w for p in result.power.values())
+            q_total = sum(p.reactive_fundamental_var for p in result.power.values())
+            rows.append(("ΣP / ΣQ1", f"{p_total:.1f} W / {q_total:.1f} var"))
             for row, (phase, power) in enumerate(result.power.items()):
                 cells = [phase, f"{result.current_rms[phase]:.3f}", f"{power.active_w:.3f}",
                     f"{power.reactive_fundamental_var:.3f}", f"{power.apparent_va:.3f}",
                     f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
                 for column, value in enumerate(cells):
                     self.power_view.setItem(row, column, QTableWidgetItem(value))
+        else:
+            rows.append(("Potências", "sem correntes"))
+        source = ("Demonstração (sintético)" if self.mode.startswith("DEMONSTRAÇÃO")
+                  else "Pino do ADC (sem calibração)" if self._pin_volts() else "Porta serial")
+        rows.append(("THD fase A", thd_text))
+        rows.append(("Origem", source))
+        rows.append(("Calibração", self.calibration.name))
+        self.details.setText(
+            "<table width='100%' cellspacing='0' cellpadding='3'>"
+            + "".join(f"<tr><td style='color:{theme.MUTED}'>{k}</td>"
+                      f"<td align='right' style='color:{theme.TEXT}'>{v}</td></tr>" for k, v in rows)
+            + f"</table><p style='color:{theme.SUBTLE}; font-size:10px'>Estimativas sem certificação metrológica.</p>")
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
             float(t[0]), float(t[-1]))
-        unit = "V"
-        self.details.setText(
-            f"{source}\n"
-            f"{thd_text}\n\n"
-            f"Fasor A: {abs(result.phasors['A']):.1f} {unit} ∠ {angles['A']:.1f}°\n"
-            f"Fasor B: {abs(result.phasors['B']):.1f} {unit} ∠ {angles['B']:.1f}°\n"
-            f"Fasor C: {abs(result.phasors['C']):.1f} {unit} ∠ {angles['C']:.1f}°\n"
-            f"{power_text}\nEstimativas sem certificação metrológica."
-        )
 
-    def _add_nav(self, label: str, widget: QWidget) -> None:
-        button = QPushButton(label)
+    def _scope_span(self) -> float:
+        index = self.cycles_combo.currentIndex()
+        if index == 3:
+            return 0.25
+        frequency = getattr(self, "_last_frequency", None) or 60.0
+        return min(0.25, (2, 4, 8)[index] / frequency)
+
+    def _add_nav(self, label: str, widget: QWidget, icon_name: str = "scope") -> None:
+        button = QPushButton("  " + label)
+        button.setIcon(theme.icon(icon_name, theme.MUTED))
+        button.setIconSize(QSize(18, 18))
+        button.setProperty("title", label)
         button.setObjectName("nav")
         button.setCheckable(True)
         button.clicked.connect(lambda _=False, w=widget: (self.tabs.setCurrentWidget(w), self._sync_nav()))
@@ -704,11 +770,14 @@ class MainWindow(FeaturesMixin, QMainWindow):
         current = self.tabs.currentWidget()
         for button, widget in self.nav_buttons:
             button.setChecked(widget is current)
+            if widget is current and hasattr(self, "page_title"):
+                self.page_title.setText(button.property("title"))
 
     def toggle_pause(self) -> None:
         self.paused = not self.paused
         self.btn_pause.setChecked(self.paused)
-        self.btn_pause.setText("Retomar" if self.paused else "Pausar")
+        self.btn_pause.setIcon(theme.icon("play" if self.paused else "pause"))
+        self.btn_pause.setToolTip("Retomar gráficos (Espaço)" if self.paused else "Pausar gráficos (Espaço)")
         self.pause_chip.setVisible(self.paused)
         self._log("Gráficos pausados; aquisição e registro continuam." if self.paused else "Gráficos retomados.")
 
@@ -751,7 +820,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.editor.setPlainText(Path(filename).read_text(encoding="utf-8"))
             self.current_file = Path(filename)
             self.editor.document().setModified(False)
-            self.tabs.setCurrentWidget(self.editor)
+            self.tabs.setCurrentWidget(self.editor_page)
+            self.file_label.setText(filename)
             self._log(f"Código aberto: {filename}")
         except OSError as exc:
             QMessageBox.critical(self, "Erro ao abrir", str(exc))
@@ -767,6 +837,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             Path(filename).write_text(self.editor.toPlainText(), encoding="utf-8")
             self.current_file = Path(filename)
             self.editor.document().setModified(False)
+            self.file_label.setText(filename)
             self._log(f"Código salvo: {filename}")
         except OSError as exc:
             QMessageBox.critical(self, "Erro ao salvar", str(exc))
