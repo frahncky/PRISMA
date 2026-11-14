@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from .measurement import Measurement, line_voltages, sequence_components
+from .measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, line_voltages, sequence_components
 
 PHASE_COLORS = {"A": "#0f9fb8", "B": "#c98a12", "C": "#c0558a"}
 
@@ -56,6 +56,11 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
                  f"<th>Zero (V)</th><th>Desequilíbrio V2/V1</th></tr><tr><td>{seq.positive:.3f}</td>"
                  f"<td>{seq.negative:.3f}</td><td>{seq.zero:.3f}</td><td>{unbalance}</td></tr></table>"
                  if seq else "")
+    def flag(value: float | None, limit: float) -> str:
+        return (f" <em class='warn'>acima do limite de {limit:.0f} % (PRODIST)</em>"
+                if value is not None and value > limit else "")
+    thd_flag = flag(result.thd_percent, LIMIT_THD_PERCENT)
+    unb_flag = flag(seq.unbalance_percent if seq else None, LIMIT_UNBALANCE_PERCENT)
     generated = datetime.now(timezone.utc).astimezone()
     document = f"""<!doctype html><html lang="pt-BR"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -71,6 +76,7 @@ table{{border-collapse:collapse;margin:12px 0;min-width:420px}}
 td,th{{border-bottom:1px solid #e1e6ec;padding:7px 12px;text-align:left}} th{{background:#f2f5f8}}
 .dot{{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px}}
 figure{{margin:14px 0}} img{{max-width:100%;border:1px solid #d5dde6;border-radius:8px}}
+em.warn{{color:#b8650a;font-style:normal;font-weight:600;display:block}}
 figcaption{{font-size:12px;color:#5d6b7c}}
 footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6ec;padding-top:10px}}
 @media print{{body{{margin:0}} figure{{break-inside:avoid}}}}
@@ -80,8 +86,8 @@ footer{{margin-top:30px;font-size:12px;color:#5d6b7c;border-top:1px solid #e1e6e
 <p><b>Origem:</b> {escape(source)}<br><b>Calibração:</b> {escape(calibration)}</p>
 <div class="kpis">
 <div class="kpi"><span>Frequência</span><b>{result.frequency_hz:.3f} Hz</b></div>
-<div class="kpi"><span>THD fase A</span><b>{thd}</b><span>{harmonic_range.strip()}</span></div>
-<div class="kpi"><span>Desequilíbrio</span><b>{unbalance}</b></div>
+<div class="kpi"><span>THD fase A</span><b>{thd}</b><span>{harmonic_range.strip()}{thd_flag}</span></div>
+<div class="kpi"><span>Desequilíbrio</span><b>{unbalance}</b><span>{unb_flag}</span></div>
 <div class="kpi"><span>Ordem das fases</span><b>{(seq.rotation if seq else None) or "indefinida"}</b></div>
 <div class="kpi"><span>Janelamento</span><b>{escape(result.window)}</b></div>
 </div>

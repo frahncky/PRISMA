@@ -6,6 +6,9 @@ import numpy as np
 from .protocol import Sample
 
 PHASES = ("A", "B", "C")
+# Limites de referência do PRODIST Módulo 8 (baixa tensão, Vn ≤ 1 kV).
+LIMIT_UNBALANCE_PERCENT = 3.0
+LIMIT_THD_PERCENT = 10.0
 
 
 @dataclass(frozen=True)

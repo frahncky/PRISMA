@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import SignalBuffer, analyze, line_voltages, sequence_components
+from prisma.core.measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, SignalBuffer, analyze, line_voltages, sequence_components
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
@@ -784,7 +784,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
             self.harmonics.setTitle(f"Harmônicas · fase A · h2–h{last_harmonic}", color=theme.MUTED, size="10pt")
             self.thd_label.setText(f"{result.thd_percent:.1f} %")
-            self.thd_hint.setText(f"h2 a h{last_harmonic}")
+            over = result.thd_percent > LIMIT_THD_PERCENT
+            self.thd_label.setStyleSheet(f"color:{theme.WARNING}" if over else "")
+            self.thd_hint.setText(f"h2 a h{last_harmonic}" + (f" · acima de {LIMIT_THD_PERCENT:.0f} % (PRODIST)" if over else ""))
             thd = result.thd_percent
             thd_text = f"{thd:.2f} % (h2–h{last_harmonic})"
         else:
@@ -821,7 +823,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
             rows.append(("Sequência +/−/0", f"{seq.positive:.3f} / {seq.negative:.3f} / {seq.zero:.3f} V"))
             order = {"ABC": "ABC (direta)", "ACB": f"<span style='color:{theme.WARNING}'>ACB (inversa)</span>"}
             rows.append(("Ordem das fases", order.get(seq.rotation, "indefinida")))
-            rows.append(("Desequilíbrio V2/V1", f"{seq.unbalance_percent:.1f} %"))
+            unb = f"{seq.unbalance_percent:.1f} %"
+            if seq.unbalance_percent > LIMIT_UNBALANCE_PERCENT:
+                unb = f"<span style='color:{theme.WARNING}'>⚠ {unb} (limite {LIMIT_UNBALANCE_PERCENT:.0f} %)</span>"
+            rows.append(("Desequilíbrio V2/V1", unb))
         rows.append(("THD fase A", thd_text))
         rows.append(("Origem", source))
         rows.append(("Calibração", self.calibration.name))

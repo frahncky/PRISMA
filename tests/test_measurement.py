@@ -140,3 +140,14 @@ def test_crest_factor_sine_and_flat():
     values = np.column_stack((np.sin(2 * np.pi * 10 * t), np.ones(1000), np.sign(np.sin(2 * np.pi * 10 * t + 0.1))))
     cf = crest_factors(values)
     assert abs(cf[0] - 2 ** 0.5) < 1e-3 and cf[1] is None and abs(cf[2] - 1) < 0.05
+
+
+def test_report_flags_values_above_prodist_limits(tmp_path):
+    import cmath
+    from prisma.core.measurement import Measurement
+    from prisma.core.reports import write_report
+    a = cmath.rect(1, -2 * cmath.pi / 3)
+    result = Measurement({"A": 1, "B": 1, "C": 1}, {"A": 1, "B": 0.5 * a, "C": a * a}, [100, 20], 60.0, 20.0)
+    path = tmp_path / "r.html"
+    write_report(path, result, "teste", "nenhuma", 0, 1)
+    assert path.read_text(encoding="utf-8").count("acima do limite") == 2
