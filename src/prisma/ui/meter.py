@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout
 
-from prisma.core.measurement import Measurement, line_voltages, load_nature, totals
+from prisma.core.measurement import LINE_PAIRS, Measurement, line_voltages, load_nature, totals
 from prisma.ui import theme
 
 PHASES = ("A", "B", "C")
@@ -67,6 +67,8 @@ class MeterTable(QFrame):
             if name != "T":
                 head.setStyleSheet(f"color: {theme.PHASE[name]};")
             grid.addWidget(head, 0, column)
+        self.heads = {name: grid.itemAtPosition(0, column).widget()
+                      for column, name in enumerate(COLUMNS, start=1)}
         self.cells: dict[tuple[str, str], QLabel] = {}
         for row, (key, caption) in enumerate(ROWS, start=1):
             label = QLabel(caption)
@@ -99,17 +101,37 @@ class MeterTable(QFrame):
             else:
                 cell.setText("" if key == "ang" and name == "T" else EMPTY)
 
+    def _set_wiring(self, phases: tuple[str, ...]) -> None:
+        """Cabeçalho do total e dicas conforme a ligação (fases fora dela ficam em "—")."""
+        count = len(phases)
+        self.heads["T"].setText({1: "Total", 2: "Bifásico"}.get(count, "Trifásico"))
+        word = {1: "da fase A", 2: "das fases A e B"}.get(count, "das três fases")
+        self.cells[("v", "T")].setToolTip(f"Média {word}")
+        self.cells[("i", "T")].setToolTip(f"Média {word}")
+        self.cells[("pf", "T")].setToolTip("FP total = P total / S total")
+        for name in PHASES:
+            self.cells[("vl", name)].setToolTip("")
+        for name, (a, b) in zip(PHASES, LINE_PAIRS[tuple(phases)]):
+            self.cells[("vl", name)].setToolTip(f"Tensão de linha {a}{b}")
+
     def show_result(self, result: Measurement, rotation: complex = 1, pin_volts: bool = False) -> None:
         volt = "{:.3f} V" if pin_volts else "{:.2f} V"
         amp_unit = "V" if pin_volts else "A"  # sem calibração, a corrente também é tensão no pino
+        used = tuple(result.phases)
+        self._set_wiring(used)
         for phase in PHASES:
-            self.cells[("v", phase)].setText(volt.format(result.rms[phase]))
-            self.cells[("ang", phase)].setText(f"{degrees(result.phasors[phase] * rotation)}°")
-        self.cells[("v", "T")].setText(_how(volt.format(sum(result.rms.values()) / 3), "média"))
-        lines = [abs(v) for v in line_voltages(result.phasors).values()]
-        for phase, value in zip(PHASES, lines):
-            self.cells[("vl", phase)].setText(volt.format(value))
-        self.cells[("vl", "T")].setText(_how(volt.format(sum(lines) / 3), "média"))
+            if phase in used:
+                self.cells[("v", phase)].setText(volt.format(result.rms[phase]))
+                self.cells[("ang", phase)].setText(f"{degrees(result.phasors[phase] * rotation)}°")
+            else:
+                self.cells[("v", phase)].setText("—")
+                self.cells[("ang", phase)].setText("—")
+        self.cells[("v", "T")].setText(_how(volt.format(sum(result.rms[p] for p in used) / len(used)), "média"))
+        # Linha: trifásico AB, BC, CA nas colunas A, B, C; bifásico só AB; monofásico nenhuma.
+        lines = [abs(v) for v in line_voltages(result.phasors, used).values()]
+        for index, phase in enumerate(PHASES):
+            self.cells[("vl", phase)].setText(volt.format(lines[index]) if index < len(lines) else "—")
+        self.cells[("vl", "T")].setText(_how(volt.format(sum(lines) / len(lines)), "média") if lines else "—")
         total = totals(result)
         if total is None:
             for key in ("i", "p", "q", "s", "pf"):
@@ -118,13 +140,18 @@ class MeterTable(QFrame):
             self.cells[("i", "A")].setToolTip("Sem canais de corrente")
             return
         for phase in PHASES:
+            if phase not in used:
+                for key in ("i", "p", "q", "s", "pf"):
+                    self.cells[(key, phase)].setText("—")
+                continue
             power = result.power[phase]
             self.cells[("i", phase)].setText(f"{result.current_rms[phase]:.3f} {amp_unit}")
             self.cells[("p", phase)].setText(si(power.active_w, "W"))
             self.cells[("q", phase)].setText(si(power.reactive_fundamental_var, "var"))
             self.cells[("s", phase)].setText(si(power.apparent_va, "VA"))
             self.cells[("pf", phase)].setText(_pf(power.power_factor, power.reactive_fundamental_var))
-        self.cells[("i", "T")].setText(_how(f"{sum(result.current_rms.values()) / 3:.3f} {amp_unit}", "média"))
+        self.cells[("i", "T")].setText(_how(f"{sum(result.current_rms[p] for p in used) / len(used):.3f} {amp_unit}",
+                                            "média"))
         self.cells[("p", "T")].setText(_how(si(total.active_w, "W"), "soma"))
         self.cells[("q", "T")].setText(_how(si(total.reactive_var, "var"), "soma"))
         self.cells[("s", "T")].setText(_how(si(total.apparent_va, "VA"), "soma"))

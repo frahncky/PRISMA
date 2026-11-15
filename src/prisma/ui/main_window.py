@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from prisma import __version__
 from prisma.core.measurement import (summary_measurement, LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
-                                     sequence_components)
+                                     sequence_components, three_phase, with_wiring, WIRINGS, WIRING_LABELS)
 from prisma.core.protocol import CMD_INFO, Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.link import link_label, network_url
@@ -113,6 +113,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.energy = self.stats.energy
         self.reader: SerialReader | None = None
         self.kiosk = False
+        self.wiring = "tri"  # ligação do experimento: mono, bi ou tri (ver set_wiring)
         self._last_data_clock: float | None = None  # chegada do último dado da placa (monotônico)
         self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
@@ -123,6 +124,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reset_energy()
         self._build_menu()
         self._build_features()
+        self.set_wiring(str(self.settings.value("wiring", "tri")), save=False)
         self.refresh_ports()
         self.timer = QTimer(self)
         self.timer.setInterval(50)
@@ -348,6 +350,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         top.addWidget(self.btn_snapshot)
         top.addWidget(self.btn_report)
         top.addSpacing(10)
+        self.wiring_combo = QComboBox()
+        for key, label in WIRING_LABELS.items():
+            self.wiring_combo.addItem(label, key)
+        self.wiring_combo.setToolTip("Ligação do experimento: fases com sensores (A; A e B; A, B e C)")
+        self.wiring_combo.currentIndexChanged.connect(
+            lambda _=0: self.set_wiring(self.wiring_combo.currentData()))
+        top.addWidget(self.wiring_combo)
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(190)
         self.port_combo.setToolTip("Porta serial da placa ou gateway na rede (Wi-Fi)")
@@ -750,7 +759,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         signs = {}
         if self.last_analysis is not None:
             signs = {p: -1.0 if x.reactive_fundamental_var < 0 else 1.0 for p, x in self.last_analysis[0].power.items()}
-        result = summary_measurement(summary, gains, signs, self.calibration.delays_s())
+        result = with_wiring(summary_measurement(summary, gains, signs, self.calibration.delays_s()), self.wiring)
         self.stats.update(self._summary_t, result)
         self._show_continuous(summary, result)
 
@@ -913,15 +922,20 @@ class MainWindow(FeaturesMixin, QMainWindow):
             x = t - t[trigger]
             keep = (x >= 0) & (x <= span)
             self.wave.setXRange(0.0, span, padding=0)
+        used = WIRINGS[self.wiring]
         for i, phase in enumerate(("A", "B", "C")):
-            self.curves[phase].setData(x[keep], values[keep, i])
+            if phase in used:
+                self.curves[phase].setData(x[keep], values[keep, i])
+            else:
+                self.curves[phase].setData([], [])
         if (t[-1] - t[0]) < 0.12:
             return
         try:
             frequency = (60.0, 50.0, None)[self.frequency_combo.currentIndex()]
             window = ("rectangular", "hann")[self.window_combo.currentIndex()]
             values, currents = self.calibration.align(t, values, self.buffer.currents())
-            result = analyze(t, values, fundamental_hz=frequency, currents=currents, window=window)
+            result = with_wiring(analyze(t, values, fundamental_hz=frequency, currents=currents, window=window),
+                                 self.wiring)
         except ValueError as exc:
             self.last_analysis = None
             self.frequency_label.setText("—")
@@ -966,8 +980,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
             pos=0, angle=90, pen=pg.mkPen(theme.BORDER, width=1)
         ))
         reference = self.phasor_reference.currentIndex()
-        rotation = np.exp(-1j * np.angle(result.phasors[("A", "B", "C")[reference - 1]])) if reference else 1
-        for phase in ("A", "B", "C"):
+        ref_phase = ("A", "B", "C")[reference - 1] if reference else None
+        if ref_phase is not None and ref_phase not in result.phases:
+            ref_phase = "A"  # referência numa fase fora da ligação: usa a A
+        rotation = np.exp(-1j * np.angle(result.phasors[ref_phase])) if ref_phase else 1
+        for phase in result.phases:
             ph = result.phasors[phase] * rotation
             item = self.phasor.plot(
                 [0, ph.real], [0, ph.imag],
@@ -982,11 +999,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
             tag.setPos(ph.real * 1.25, ph.imag * 1.25)
             self.phasor.addItem(tag)
         # Correntes tracejadas, em escala (65 % do maior fasor de tensão): o que importa é o ângulo.
-        v_peak = max(abs(p) for p in result.phasors.values())
-        i_peak = max((abs(p) for p in result.current_phasors.values()), default=0.0)
+        v_peak = max(abs(result.phasors[p]) for p in result.phases)
+        i_peak = max((abs(result.current_phasors[p]) for p in result.phases if p in result.current_phasors),
+                     default=0.0)
         if i_peak > 1e-12:
             scale = 0.65 * v_peak / i_peak
-            for phase in ("A", "B", "C"):
+            for phase in result.phases:
                 current = result.current_phasors[phase] * rotation * scale
                 self.phasor.plot([0, current.real], [0, current.imag],
                                  pen=pg.mkPen(COLORS[phase], width=2, style=Qt.PenStyle.DashLine))
@@ -1017,20 +1035,28 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.meter.show_result(result, rotation, self._pin_volts())
         self._show_energy(result, float(t[-1]))
         self.power_view.clearContents()
-        for row, (phase, power) in enumerate(result.power.items()):
+        for row, (phase, power) in enumerate((p, x) for p, x in result.power.items() if p in result.phases):
             cells = [phase, f"{result.current_rms[phase]:.3f}", f"{power.active_w:.3f}",
                 f"{power.reactive_fundamental_var:.3f}", f"{power.apparent_va:.3f}",
                 f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
             for column, value in enumerate(cells):
                 self.power_view.setItem(row, column, QTableWidgetItem(value))
-        seq = sequence_components(result.phasors)
-        unbalance = seq.unbalance_percent
-        over = unbalance is not None and unbalance > LIMIT_UNBALANCE_PERCENT
-        self.unbalance_label.setText("—" if unbalance is None else f"{unbalance:.1f} %")
-        self.unbalance_label.setStyleSheet(f"color:{theme.WARNING}" if over else "")
-        self.sequence_label.setText(seq.rotation or "—")
-        self.sequence_label.setStyleSheet(f"color:{theme.WARNING}" if seq.rotation == "ACB" else "")
-        self.sequence_hint.setText({"ABC": "direta", "ACB": "⚠ inversa"}.get(seq.rotation or "", "indefinida"))
+        if three_phase(result):
+            seq = sequence_components(result.phasors)
+            unbalance = seq.unbalance_percent
+            over = unbalance is not None and unbalance > LIMIT_UNBALANCE_PERCENT
+            self.unbalance_label.setText("—" if unbalance is None else f"{unbalance:.1f} %")
+            self.unbalance_label.setStyleSheet(f"color:{theme.WARNING}" if over else "")
+            self.unbalance_hint.setText(f"limite {LIMIT_UNBALANCE_PERCENT:.0f} % (PRODIST)")
+            self.sequence_label.setText(seq.rotation or "—")
+            self.sequence_label.setStyleSheet(f"color:{theme.WARNING}" if seq.rotation == "ACB" else "")
+            self.sequence_hint.setText({"ABC": "direta", "ACB": "⚠ inversa"}.get(seq.rotation or "", "indefinida"))
+        else:
+            for label in (self.unbalance_label, self.sequence_label):
+                label.setText("—")
+                label.setStyleSheet("")
+            self.unbalance_hint.setText("só na ligação trifásica")
+            self.sequence_hint.setText("só na ligação trifásica")
         self.details.setText("")
         self.record_trend(result)
         self.last_analysis = (result, self.mode,
@@ -1109,6 +1135,30 @@ class MainWindow(FeaturesMixin, QMainWindow):
             button.setChecked(widget is current)
             if widget is current and hasattr(self, "page_title"):
                 self.page_title.setText(button.property("title"))
+
+    def set_wiring(self, wiring: str, save: bool = True) -> None:
+        """Ligação do experimento (mono, bi ou tri): fases mostradas, totais e alertas.
+
+        Não descarta dados nem zera a energia: só muda o que entra nos cálculos a
+        partir de agora. Ao trocar de experimento, zere energia e demanda.
+        """
+        if wiring not in WIRINGS:
+            wiring = "tri"
+        changed = wiring != self.wiring
+        self.wiring = wiring
+        index = self.wiring_combo.findData(wiring)
+        if index >= 0 and index != self.wiring_combo.currentIndex():
+            self.wiring_combo.blockSignals(True)
+            self.wiring_combo.setCurrentIndex(index)
+            self.wiring_combo.blockSignals(False)
+        used = WIRINGS[wiring]
+        for phase, curve in self.curves.items():
+            curve.setVisible(phase in used)
+        if save:
+            self.settings.setValue("wiring", wiring)
+        if changed:
+            self._log(f"Ligação: {WIRING_LABELS[wiring].lower()} (fases {', '.join(used)}). "
+                      "Zere energia e demanda se o experimento mudou.")
 
     def enter_kiosk(self, screen=None, hide_cursor: bool = True):
         """Medidor na tela dedicada: só o painel, sem demonstração; sair leva à manutenção."""

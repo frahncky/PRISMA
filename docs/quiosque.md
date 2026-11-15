@@ -6,6 +6,7 @@ O modo quiosque transforma uma tela touch (referência: 10,1" 1280×800) no most
 python -m prisma --quiosque --port prisma.local        # gateway ESP32-S3 pela rede
 python -m prisma --quiosque --port COM3                # DEMOEM direto na USB
 python -m prisma --quiosque --port 192.168.0.20:3333   # ponte do PC (scripts/ponte_tcp.py)
+python -m prisma --quiosque --port COM3 --ligacao mono  # experimento monofásico (bi, tri); fica salvo
 ```
 
 ## O que muda em relação ao app normal

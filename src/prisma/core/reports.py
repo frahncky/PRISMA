@@ -8,7 +8,8 @@ from datetime import datetime, timezone
 from html import escape
 from pathlib import Path
 
-from .measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, line_voltages, sequence_components
+from .measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, line_voltages,
+                          sequence_components, three_phase)
 
 PHASE_COLORS = {"A": "#0f9fb8", "B": "#c98a12", "C": "#c0558a"}
 
@@ -29,11 +30,11 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
         f"<td>{rms:.3f}</td><td>{abs(result.phasors[phase]):.3f}</td>"
         f"<td>{_angle(result.phasors[phase], reference)}</td>"
         f"<td>{'—' if result.crest.get(phase) is None else format(result.crest[phase], '.2f')}</td></tr>"
-        for phase, rms in result.rms.items())
+        for phase, rms in result.rms.items() if phase in result.phases)
     power_rows = "".join(f"<tr><td>{phase}</td><td>{p.active_w:.3f}</td>"
                          f"<td>{p.reactive_fundamental_var:.3f}</td><td>{p.apparent_va:.3f}</td>"
                          f"<td>{p.power_factor if p.power_factor is not None else 'indisponível'}</td></tr>"
-                         for phase, p in result.power.items())
+                         for phase, p in result.power.items() if phase in result.phases)
     power_table = (f"<table><tr><th>Fase</th><th>P (W)</th><th>Q1 (var)</th><th>S (VA)</th><th>FP</th></tr>{power_rows}</table>"
                    if power_rows else "<p class='muted'>Sem correntes sincronizadas: potências indisponíveis.</p>")
     harmonic_rows = "".join(f"<tr><td>{h}</td><td>{value:.4f}</td></tr>"
@@ -44,12 +45,12 @@ def write_report(path: Path, result: Measurement, source: str, calibration: str,
         f"<figure><img alt='{escape(title)}' src='data:image/png;base64,{base64.b64encode(png).decode()}'>"
         f"<figcaption>{escape(title)}</figcaption></figure>"
         for title, png in (images or {}).items())
-    seq = sequence_components(result.phasors) if set("ABC") <= set(result.phasors) else None
+    seq = sequence_components(result.phasors) if three_phase(result) else None
     unbalance = (f"{seq.unbalance_percent:.2f} %" if seq and seq.unbalance_percent is not None
                  else "indisponível")
     line_rows = ("".join(f"<tr><td>{name}</td><td>{abs(v):.3f}</td><td>{_angle(v, reference)}</td></tr>"
-                         for name, v in line_voltages(result.phasors).items())
-                 if set("ABC") <= set(result.phasors) else "")
+                         for name, v in line_voltages(result.phasors, result.phases).items())
+                 if set(result.phases) <= set(result.phasors) else "")
     line_table = (f"<h2>Tensões de linha (fundamental)</h2><table><tr><th>Par</th><th>RMS (V)</th>"
                   f"<th>Ângulo (ref. A)</th></tr>{line_rows}</table>" if line_rows else "")
     seq_table = (f"<h2>Componentes simétricas</h2><table><tr><th>Positiva (V)</th><th>Negativa (V)</th>"

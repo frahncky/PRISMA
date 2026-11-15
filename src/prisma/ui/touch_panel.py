@@ -23,8 +23,8 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
-from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, MeterStats,
-                                     load_nature, sequence_components, totals)
+from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, PHASES, Measurement, MeterStats,
+                                     WIRING_LABELS, WIRINGS, load_nature, sequence_components, three_phase, totals)
 from prisma.core.query import alerts
 from prisma.ui import theme
 
@@ -62,6 +62,7 @@ QLabel#touchAlert {{ background: #3a1e22; color: #ffd0d3; border: 1px solid {the
     padding: 12px 18px; font-size: 18px; font-weight: 600; }}
 QLabel#touchLink {{ background: #3a3018; color: #ffe2a8; border: 1px solid {theme.WARNING}; border-radius: 14px;
     padding: 12px 18px; font-size: 20px; font-weight: 700; }}
+QLabel#touchWiring {{ color: {theme.MUTED}; font-size: 18px; font-weight: 700; }}
 QLabel#plotLegend {{ font-size: 17px; font-weight: 700; }}
 QLabel#plotTitle {{ color: {theme.MUTED}; font-size: 17px; font-weight: 700; }}
 QWidget#plotCard {{ background: {theme.SURFACE}; border: 1px solid {theme.BORDER}; border-radius: 18px; }}
@@ -244,6 +245,7 @@ class TouchPanel(QWidget):
     def __init__(self, source: PanelSource, parent: QWidget | None = None, kiosk: bool = False) -> None:
         super().__init__(parent, Qt.WindowType.Window)
         self.kiosk = kiosk
+        self._phases: tuple[str, ...] = PHASES
         self.setObjectName("touchPanel")
         self.setWindowTitle("PRISMA · Painel")
         self.setStyleSheet(theme.STYLE + TOUCH_STYLE)
@@ -307,6 +309,11 @@ class TouchPanel(QWidget):
         self.mode_label = QLabel("")
         self.mode_label.setObjectName("pill")
         top.addWidget(self.mode_label, alignment=Qt.AlignmentFlag.AlignVCenter)
+        top.addSpacing(10)
+        self.wiring_label = QLabel("")
+        self.wiring_label.setObjectName("touchWiring")
+        self.wiring_label.setToolTip("Ligação do experimento (escolhida na janela principal ou com --ligacao)")
+        top.addWidget(self.wiring_label, alignment=Qt.AlignmentFlag.AlignVCenter)
         top.addStretch(1)
         self.clock = QLabel("")
         self.clock.setObjectName("touchClock")
@@ -373,6 +380,8 @@ class TouchPanel(QWidget):
         for column, name in enumerate(("A", "B", "C", "T"), start=1):
             grid.setColumnStretch(column, 3 if name == "T" else 2)
             head = QLabel("Trifásico" if name == "T" else f"Fase {name}")
+            if name == "T":
+                self.ov_total_head = head
             head.setObjectName("ovHead")
             head.setAlignment(Qt.AlignmentFlag.AlignRight)
             if name != "T":
@@ -541,6 +550,9 @@ class TouchPanel(QWidget):
         self.link_banner.setText("⚠  " + problem)
         self.link_banner.setVisible(bool(problem))
         result = data.result
+        if result is not None:
+            self._phases = tuple(result.phases)
+        self.wiring_label.setText(WIRING_LABELS[_wiring_key(self._phases)])
         found = alerts(result) if result is not None else []
         self.alert_label.setText("⚠  " + "   ·   ".join(found))
         self.alert_label.setVisible(bool(found))
@@ -562,6 +574,10 @@ class TouchPanel(QWidget):
                 self.tiles[key].set_value("---", "aguardando sinal")
             return
         for phase in "ABC":
+            if phase not in result.phases:
+                self.tiles[f"v{phase}"].set_value("—", "fora da ligação")
+                self.tiles[f"i{phase}"].set_value("—", "fora da ligação")
+                continue
             self.tiles[f"v{phase}"].set_value(f"{_br(result.rms[phase], 1)} V")
             current = result.current_rms.get(phase)
             self.tiles[f"i{phase}"].set_value("---" if current is None else f"{_br(current, 2)} A",
@@ -584,8 +600,10 @@ class TouchPanel(QWidget):
             over = result.thd_percent > LIMIT_THD_PERCENT
             self.tiles["thd"].set_value(f"{_br(result.thd_percent, 1)} %",
                                         f"acima de {LIMIT_THD_PERCENT:.0f} % (PRODIST)" if over else "", warn=over)
-        unbalance = sequence_components(result.phasors).unbalance_percent
-        if unbalance is None:
+        unbalance = sequence_components(result.phasors).unbalance_percent if three_phase(result) else None
+        if not three_phase(result):
+            self.tiles["unb"].set_value("—", "só na ligação trifásica")
+        elif unbalance is None:
             self.tiles["unb"].set_value("---")
         else:
             over = unbalance > LIMIT_UNBALANCE_PERCENT
@@ -611,6 +629,9 @@ class TouchPanel(QWidget):
         self.tiles["elapsed"].set_value(_duration(energy.seconds), "desde o último zeramento")
         for phase in "ABC":
             tile = self.tiles[f"mm{phase}"]
+            if phase not in self._phases:
+                tile.set_value("—", "fora da ligação")
+                continue
             if phase not in stats.v_min:
                 tile.set_value("---")
                 continue
@@ -636,28 +657,38 @@ class TouchPanel(QWidget):
         _draw_harmonics(self.ov_harmonic, result)
         if result is None:
             return
+        used = tuple(result.phases)
+        self.ov_total_head.setText({1: "Total", 2: "Bifásico"}.get(len(used), "Trifásico"))
         for phase in "ABC":
-            cells[("v", phase)].setText(_br(result.rms[phase], 1))
-        cells[("v", "T")].setText(_how(_br(sum(result.rms.values()) / 3, 1), "média"))
-        cells[("v", "T")].setToolTip("Média das três fases")
+            cells[("v", phase)].setText(_br(result.rms[phase], 1) if phase in used else "—")
+        cells[("v", "T")].setText(_how(_br(sum(result.rms[p] for p in used) / len(used), 1), "média"))
+        cells[("v", "T")].setToolTip({1: "Fase A", 2: "Média das fases A e B"}.get(len(used), "Média das três fases"))
         total = totals(result)
         if total is not None:
             for phase in "ABC":
+                if phase not in used:
+                    for key in ("i", "p", "pf"):
+                        cells[(key, phase)].setText("—")
+                    continue
                 power = result.power[phase]
                 cells[("i", phase)].setText(_br(result.current_rms[phase], 2))
                 cells[("p", phase)].setText(_si(power.active_w, "W"))
                 cells[("pf", phase)].setText("---" if power.power_factor is None
                                              else _pf(power.power_factor, power.reactive_fundamental_var, 17))
-            cells[("i", "T")].setText(_how(_br(sum(result.current_rms.values()) / 3, 2), "média"))
+            cells[("i", "T")].setText(_how(_br(sum(result.current_rms[p] for p in used) / len(used), 2), "média"))
             cells[("p", "T")].setText(_how(_si(total.active_w, "W"), "soma"))
             cells[("pf", "T")].setText("---" if total.power_factor is None
                                        else _pf(total.power_factor, total.reactive_var, 17))
         kpis["freq"].setText(f"{_br(result.frequency_hz, 2)} Hz")
         if result.thd_percent is not None:
             kpis["thd"].setText(f"{_br(result.thd_percent, 1)} %")
-        unbalance = sequence_components(result.phasors).unbalance_percent
-        if unbalance is not None:
-            kpis["unb"].setText(f"{_br(unbalance, 2)} %")
+        if not three_phase(result):
+            kpis["unb"].setText("—")
+            kpis["unb"].setToolTip("Desequilíbrio só na ligação trifásica")
+        else:
+            unbalance = sequence_components(result.phasors).unbalance_percent
+            if unbalance is not None:
+                kpis["unb"].setText(f"{_br(unbalance, 2)} %")
 
     def _refresh_waves(self, data: PanelData) -> None:
         _draw_waves(data, self.wave_v_curves, self.wave_v, self.wave_i_curves, self.wave_i)
@@ -682,10 +713,13 @@ class TouchPanel(QWidget):
         x = np.array([(p.t - points[-1].t) / 60 for p in points])
         volts = np.array([p.voltage for p in points])
         for i, phase in enumerate("ABC"):
-            self.trend_v_curves[phase].setData(x, volts[:, i])
+            self.trend_v_curves[phase].setData(x, volts[:, i], connect="finite")
+        finite = volts[np.isfinite(volts)]
+        if not finite.size:
+            return
         # Faixa mínima de ±5 % da média: ruído de décimos de volt não parece oscilação.
-        low, high = float(volts.min()), float(volts.max())
-        half = max((high - low) / 2 * 1.2, 0.05 * abs(volts.mean()), 1e-3)
+        low, high = float(finite.min()), float(finite.max())
+        half = max((high - low) / 2 * 1.2, 0.05 * abs(finite.mean()), 1e-3)
         self.trend_v.setYRange((low + high) / 2 - half, (low + high) / 2 + half, padding=0)
         self.trend_v.setXRange(min(x[0], -1.0), 0.0, padding=0.01)
 
@@ -699,6 +733,10 @@ class TouchPanel(QWidget):
         self.timer.stop()
         super().closeEvent(event)
         self.closed.emit()
+
+
+def _wiring_key(phases: tuple[str, ...]) -> str:
+    return next((key for key, value in WIRINGS.items() if value == tuple(phases)), "tri")
 
 
 def _rising_edge(t: np.ndarray, values: np.ndarray, span: float) -> int:
@@ -731,18 +769,24 @@ def _draw_waves(data: PanelData, curves_v, plot_v, curves_i=None, plot_i=None) -
     start = _rising_edge(t, v, span)
     keep = (t >= t[start]) & (t <= t[start] + span)
     x = (t[keep] - t[start]) * 1000
+    used = data.result.phases if data.result is not None else PHASES
+    columns = [i for i, phase in enumerate("ABC") if phase in used]
     for i, phase in enumerate("ABC"):
-        curves_v[phase].setData(x, v[keep, i])
+        if phase in used:
+            curves_v[phase].setData(x, v[keep, i])
+        else:
+            curves_v[phase].setData([], [])
     plot_v.setXRange(0, span * 1000, padding=0)
-    _symmetric(plot_v, v[keep])
+    _symmetric(plot_v, v[keep][:, columns])
     if curves_i is not None:
         currents = data.currents
         has_i = currents is not None and currents.shape == v.shape
         for i, phase in enumerate("ABC"):
-            curves_i[phase].setData(x if has_i else [], currents[keep, i] if has_i else [])
+            show = has_i and phase in used
+            curves_i[phase].setData(x if show else [], currents[keep, i] if show else [])
         plot_i.setXRange(0, span * 1000, padding=0)
         if has_i:
-            _symmetric(plot_i, currents[keep])
+            _symmetric(plot_i, currents[keep][:, columns])
 
 
 def _draw_phasors(plot: pg.PlotWidget, result: Measurement | None, labels: bool = True) -> bool:
@@ -751,14 +795,15 @@ def _draw_phasors(plot: pg.PlotWidget, result: Measurement | None, labels: bool 
     if result is None:
         return False
     reference = np.exp(-1j * np.angle(result.phasors["A"]))
-    radius = max(abs(p) for p in result.phasors.values()) or 1.0
+    radius = max(abs(result.phasors[p]) for p in result.phases) or 1.0
     plot.addItem(pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(theme.BORDER)))
     plot.addItem(pg.InfiniteLine(pos=0, angle=90, pen=pg.mkPen(theme.BORDER)))
     circle = np.exp(1j * np.linspace(0, 2 * np.pi, 120)) * radius
     plot.plot(circle.real, circle.imag, pen=pg.mkPen(theme.BORDER, style=Qt.PenStyle.DotLine))
-    i_peak = max((abs(p) for p in result.current_phasors.values()), default=0.0)
+    i_peak = max((abs(result.current_phasors[p]) for p in result.phases if p in result.current_phasors),
+                 default=0.0)
     i_scale = 0.65 * radius / i_peak if i_peak > 1e-12 else None
-    for phase in "ABC":
+    for phase in result.phases:
         color = theme.PHASE[phase]
         v = result.phasors[phase] * reference
         plot.plot([0, v.real], [0, v.imag], pen=pg.mkPen(color, width=5 if labels else 3),

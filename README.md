@@ -50,6 +50,7 @@ Com a placa:
 ```powershell
 .\.venv\Scripts\python.exe -m prisma --port COM4 --profile examples\profiles\demoem-ch340.json --connect
 .\.venv\Scripts\python.exe -m prisma --last          # reusa a última porta, perfil e monitor
+.\.venv\Scripts\python.exe -m prisma --ligacao mono   # experimento monofásico (bi, tri); também no seletor do topo
 .\.venv\Scripts\python.exe -m prisma --painel --screen 2   # painel touch em tela cheia no 2º monitor (ou F10)
 .\scripts\criar_atalho.ps1                             # atalho "PRISMA" na área de trabalho
 ```

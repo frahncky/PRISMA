@@ -6,6 +6,21 @@ A aba **Análise** seleciona referência de 60 Hz, 50 Hz ou estimação automát
 
 O estimador usa cruzamentos ascendentes interpolados e mediana de períodos. Requer pelo menos três cruzamentos e rejeita sinal constante, faixa não suportada ou períodos instáveis. Não substitui um PLL nem garante desempenho em sinais muito distorcidos.
 
+### Ligação do experimento: monofásico, bifásico ou trifásico
+
+O seletor na barra de cima da janela principal (ou `--ligacao mono|bi|tri`, que fica salvo) diz quais fases têm sensores:
+
+| Ligação | Fases | Tensão de linha | Total (coluna à direita) | Desequilíbrio e sequência |
+| --- | --- | --- | --- | --- |
+| Monofásico | A | — | "Total": a própria fase A | não se aplica |
+| Bifásico | A e B | Vab | "Bifásico": P, Q e S somados; V e I médios das duas fases | não se aplica |
+| Trifásico | A, B e C | Vab, Vbc, Vca | "Trifásico": P, Q e S somados; V e I médios das três fases | IEC 61000-4-30, limite do PRODIST |
+
+- Os canais das fases fora da ligação continuam sendo lidos (aba Hardware/ADC), mas ficam fora do quadro de medições, dos totais, da energia, da demanda, das tendências, dos fasores, do osciloscópio, dos alertas, das respostas e do relatório. Na tela aparecem como "—".
+- No bifásico, a tensão de linha é `Va − Vb` dos fasores. Ela serve tanto para duas fases de uma rede trifásica (127/220 V, 120°) quanto para fase dividida (180°).
+- A ligação não descarta dados nem zera contadores. Ao trocar de experimento, zere energia e demanda (botão Zerar).
+- A DEMOEM entrega as fases nos mesmos canais em qualquer ligação (fase A = `AD4` + `DADP0`, e assim por diante); os jumpers do J38 de cada caso estão em [ligações da DEMOEM](ligacoes-hardware-demoem.md#45-módulos-de-sensor-sugeridos).
+
 ## Método
 
 O ajuste harmônico usa mínimos quadrados simultâneos com intercepto, seno e cosseno de cada ordem, ponderados pela janela escolhida. Isso reduz o vazamento entre ordens em janelas que não contêm um número inteiro de ciclos. A ordem máxima respeita tanto Nyquist (calculado pelo maior intervalo entre amostras) quanto a quantidade disponível de amostras. Timestamps precisam ser estritamente crescentes e canais sincronizados.

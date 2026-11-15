@@ -11,7 +11,8 @@ import math
 import re
 import unicodedata
 
-from .measurement import LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, sequence_components, totals
+from .measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, sequence_components,
+                          three_phase, totals)
 
 PHASES = ("A", "B", "C")
 
@@ -87,6 +88,8 @@ def answer(question: str, result: Measurement | None) -> Answer:
     if result is None:
         return Answer("Ainda não há medição válida. Aguarde o sinal estabilizar.")
 
+    # Só as fases ligadas no experimento (monofásico: A; bifásico: A e B).
+    phases = tuple(p for p in phases if p in result.phases) or tuple(result.phases)
     if quantity == "voltage":
         return Answer(_per_phase("A tensão", phases, result.rms, "volts", 1))
     if quantity == "frequency":
@@ -97,6 +100,8 @@ def answer(question: str, result: Measurement | None) -> Answer:
         over = " Acima do limite do PRODIST." if result.thd_percent > LIMIT_THD_PERCENT else ""
         return Answer(f"A distorção harmônica total da fase A é {_number(result.thd_percent, 1)} por cento.{over}")
     if quantity in ("unbalance", "rotation"):
+        if not three_phase(result):
+            return Answer("Desequilíbrio e sequência de fases só existem com as três fases ligadas.")
         seq = sequence_components(result.phasors)
         if quantity == "rotation":
             order = {"ABC": "direta, A B C", "ACB": "inversa, A C B"}.get(seq.rotation or "")
@@ -136,6 +141,8 @@ def alerts(result: Measurement) -> list[str]:
     found = []
     if result.thd_percent is not None and result.thd_percent > LIMIT_THD_PERCENT:
         found.append(f"THD da fase A em {_number(result.thd_percent, 1)} %, acima de {LIMIT_THD_PERCENT:.0f} %")
+    if not three_phase(result):
+        return found  # sequência e desequilíbrio só existem com as três fases
     seq = sequence_components(result.phasors)
     if seq.rotation == "ACB":
         found.append("Sequência de fases inversa (ACB)")
@@ -146,10 +153,11 @@ def alerts(result: Measurement) -> list[str]:
 
 
 def summary(result: Measurement) -> str:
-    rms = ", ".join(_number(result.rms[p], 0) for p in PHASES)
+    rms = ", ".join(_number(result.rms[p], 0) for p in result.phases)
     text = f"Tensões de {rms} volts a {_number(result.frequency_hz, 1)} hertz."
-    if result.current_rms and math.isfinite(sum(p.active_w for p in result.power.values())):
-        total = sum(p.active_w for p in result.power.values())
+    total_power = totals(result)
+    if total_power is not None and math.isfinite(total_power.active_w):
+        total = total_power.active_w
         text += f" Potência total de {_number(total, 0)} watts."
     found = alerts(result)
     return text + (" Alertas: " + "; ".join(found) + "." if found else " Sem alertas.")

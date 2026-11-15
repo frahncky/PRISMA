@@ -53,6 +53,7 @@
 - [x] Perfis de calibração linear por canal e janelas retangular/Hann
 - [x] Ajuste harmônico e THD com limite de Nyquist e validação de dados
 - [x] Correntes trifásicas opcionais, P, Q1, S e fator de potência AC por fase
+- [x] Ligação do experimento (monofásico, bifásico, trifásico): fases mostradas, totais, tensões de linha, energia, alertas e relatório só com as fases ligadas
 - [x] Fasores selecionáveis e referência visual absoluta ou relativa a uma fase
 - [x] Relatório HTML autossuficiente e exportação de dados CSV/SQLite
 - [x] Perfis declarativos para outras placas que transmitam PRISMA JSON v1

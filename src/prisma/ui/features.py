@@ -29,7 +29,7 @@ CAL_CHANNELS = ("va", "vb", "vc", "ia", "ib", "ic")
 from prisma.core.devices import DeviceProfile, load_protocol, serial_inventory
 from prisma.core.history import export_session, list_sessions
 from prisma.core.reports import write_report
-from prisma.core.measurement import sequence_components
+from prisma.core.measurement import sequence_components, three_phase
 from prisma.core.toolchain import CommandRunner, DebugSession, Project, artifact_digest
 
 
@@ -990,12 +990,13 @@ class FeaturesMixin:
         t = now - self._trend_t0
         if self.trend and t - self.trend[-1][0] < 0.5:
             return
-        unbalance = sequence_components(result.phasors).unbalance_percent
-        self.trend.append((t, *(result.rms[p] for p in "ABC"), result.frequency_hz,
+        unbalance = sequence_components(result.phasors).unbalance_percent if three_phase(result) else None
+        self.trend.append((t, *(result.rms[p] if p in result.phases else float("nan") for p in "ABC"),
+                           result.frequency_hz,
                            float("nan") if unbalance is None else unbalance))
         data = np.array(self.trend)
         for i, phase in enumerate("ABC", 1):
-            self.trend_curves[phase].setData(data[:, 0], data[:, i])
+            self.trend_curves[phase].setData(data[:, 0], data[:, i], connect="finite")
         self.trend_freq_curve.setData(data[:, 0], data[:, 4])
         self.trend_unb_curve.setData(data[:, 0], data[:, 5], connect="finite")
 

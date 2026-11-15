@@ -1,6 +1,6 @@
 """Processamento AC: frequência, fasores, harmônicas e potência por fase."""
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 import math
 import numpy as np
@@ -10,6 +10,11 @@ PHASES = ("A", "B", "C")
 # Limites de referência do PRODIST Módulo 8 (baixa tensão, Vn ≤ 1 kV).
 LIMIT_UNBALANCE_PERCENT = 3.0
 LIMIT_THD_PERCENT = 10.0
+# Tipo de ligação do experimento: fases com sensores. Os canais das outras fases
+# continuam sendo lidos, mas ficam fora dos totais, das tensões de linha e dos alertas.
+WIRINGS = {"mono": ("A",), "bi": ("A", "B"), "tri": PHASES}
+WIRING_LABELS = {"mono": "Monofásico", "bi": "Bifásico", "tri": "Trifásico"}
+LINE_PAIRS = {("A",): (), ("A", "B"): (("A", "B"),), PHASES: (("A", "B"), ("B", "C"), ("C", "A"))}
 
 
 @dataclass(frozen=True)
@@ -32,6 +37,19 @@ class Measurement:
     window: str = "rectangular"
     crest: dict[str, float | None] = field(default_factory=dict)
     current_phasors: dict[str, complex] = field(default_factory=dict)
+    phases: tuple[str, ...] = PHASES  # fases ligadas no experimento (ver WIRINGS)
+
+
+def with_wiring(result: Measurement, wiring: str) -> Measurement:
+    """A mesma medição, restrita às fases da ligação ``mono``, ``bi`` ou ``tri``."""
+    if wiring not in WIRINGS:
+        raise ValueError(f"Ligação desconhecida: {wiring!r} (use mono, bi ou tri)")
+    return replace(result, phases=WIRINGS[wiring])
+
+
+def three_phase(result: Measurement) -> bool:
+    """Desequilíbrio e sequência só fazem sentido com as três fases ligadas."""
+    return tuple(result.phases) == PHASES and set(PHASES) <= set(result.phasors)
 
 
 class SignalBuffer:
@@ -200,10 +218,10 @@ def sequence_components(phasors: dict[str, complex]) -> Sequence:
                     float(abs(va + vb + vc) / 3))
 
 
-def line_voltages(phasors: dict[str, complex]) -> dict[str, complex]:
-    """Fasores de linha (fundamental): Vab = Va − Vb, Vbc = Vb − Vc, Vca = Vc − Va."""
-    return {"AB": phasors["A"] - phasors["B"], "BC": phasors["B"] - phasors["C"],
-            "CA": phasors["C"] - phasors["A"]}
+def line_voltages(phasors: dict[str, complex], phases: tuple[str, ...] = PHASES) -> dict[str, complex]:
+    """Fasores de linha (fundamental) entre as fases ligadas: trifásico Vab, Vbc, Vca;
+    bifásico só Vab; monofásico nenhum."""
+    return {a + b: phasors[a] - phasors[b] for a, b in LINE_PAIRS[tuple(phases)]}
 
 
 def crest_factors(values: np.ndarray) -> list[float | None]:
@@ -224,11 +242,13 @@ class Totals:
 
 
 def totals(result: Measurement) -> Totals | None:
-    if not result.power:
+    """Soma das fases ligadas (``result.phases``)."""
+    used = [result.power[p] for p in result.phases if p in result.power]
+    if not used:
         return None
-    p = sum(x.active_w for x in result.power.values())
-    q = sum(x.reactive_fundamental_var for x in result.power.values())
-    s = sum(x.apparent_va for x in result.power.values())
+    p = sum(x.active_w for x in used)
+    q = sum(x.reactive_fundamental_var for x in used)
+    s = sum(x.apparent_va for x in used)
     return Totals(p, q, s, float(np.clip(p / s, -1, 1)) if s > 1e-12 else None)
 
 
@@ -318,7 +338,7 @@ class MeterStats:
             self._demand.clear()
         dt = self.energy.update(t_end, result)
         total = totals(result)
-        for phase in PHASES:
+        for phase in result.phases:
             v = result.rms[phase]
             self.v_min[phase] = min(v, self.v_min.get(phase, v))
             self.v_max[phase] = max(v, self.v_max.get(phase, v))
@@ -332,9 +352,11 @@ class MeterStats:
             if demand is not None and (self.max_demand_w is None or demand > self.max_demand_w):
                 self.max_demand_w, self.max_demand_at = demand, now or datetime.now()
         if not self.trend or t_end - self.trend[-1].t >= self.trend_step_s:
+            used = set(result.phases)  # fases fora da ligação viram NaN (sem curva)
             self.trend.append(TrendPoint(
-                t_end, tuple(result.rms[p] for p in PHASES),
-                tuple(result.current_rms[p] for p in PHASES) if result.current_rms else None,
+                t_end, tuple(result.rms[p] if p in used else math.nan for p in PHASES),
+                tuple(result.current_rms[p] if p in used else math.nan for p in PHASES)
+                if result.current_rms else None,
                 None if total is None else total.active_w, self.demand_w if total is not None else None))
             while len(self.trend) > self.trend_points:
                 self.trend.popleft()

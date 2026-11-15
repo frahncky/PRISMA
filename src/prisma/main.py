@@ -7,6 +7,7 @@ Exemplos:
     python -m prisma --port prisma.local --connect --painel   # pelo gateway Wi-Fi
     python -m prisma --painel            # painel touch em tela cheia
     python -m prisma --quiosque --port prisma.local   # medidor numa tela dedicada (docs/quiosque.md)
+    python -m prisma --ligacao mono                  # experimento monofásico (bi, tri)
 """
 import argparse
 import json
@@ -31,6 +32,8 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                         help="tela dedicada: só o painel, conecta e reconecta sozinho, sem demonstração "
                              "(usa --port ou a última porta)")
     parser.add_argument("--cursor", action="store_true", help="no quiosque, mantém o cursor do mouse visível")
+    parser.add_argument("--ligacao", choices=("mono", "bi", "tri"),
+                        help="ligação do experimento: mono (fase A), bi (A e B) ou tri (A, B e C); fica salva")
     return parser.parse_args(argv)
 
 
@@ -69,6 +72,8 @@ def main(argv: list[str] | None = None) -> None:
             window._log(f"Porta {port} não encontrada.")
             port = None
 
+    if args.ligacao:
+        window.set_wiring(args.ligacao)
     screens = app.screens()
     target = None
     screen_index = args.screen if args.screen is not None else int(settings.value("last_screen", 1))
