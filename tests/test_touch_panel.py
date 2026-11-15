@@ -74,6 +74,7 @@ def test_fasores_harmonicas_e_tendencias(app):
     panel.show_page(TRENDS)
     x, y = panel.trend_p_curve.getData()
     assert len(x) == 61 and x[-1] == 0 and np.isclose(y[-1], 1.7145, atol=1e-3)
+    assert panel.trend_p_title.text() == "POTÊNCIA" and "TRACEJADO" not in panel.trend_p_title.text()
     panel.close()
 
 

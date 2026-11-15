@@ -89,6 +89,11 @@ def _how(text: str, word: str) -> str:
     return f"{text} <span style='color:{theme.MUTED}; font-size:15px; font-weight:400'>{word}</span>"
 
 
+def _series_legend(series) -> str:
+    """Legenda colorida em HTML: ((traço, nome, cor), ...), ex.: ━ Potência  ┅ Demanda."""
+    return "&nbsp;&nbsp;&nbsp;".join(f"<span style='color:{color}'>{mark} {name}</span>" for mark, name, color in series)
+
+
 def _pf(value: float, reactive: float, suffix_px: int) -> str:
     """FP com a natureza em letra menor ao lado: "0,900 Indut." (rich text)."""
     nature = load_nature(reactive)
@@ -145,7 +150,7 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
         item.setTextPen(pg.mkPen(theme.MUTED))
         item.setTickFont(font)
     plot.getAxis("left").setWidth(64)  # cabe "-200" na fonte grande (senão o rótulo some)
-    plot.getAxis("bottom").setHeight(34)
+    plot.getAxis("bottom").setHeight(56 if bottom else 34)  # números + rótulo sem sobrepor
     if left:
         plot.setLabel("left", left, **{"color": theme.MUTED, "font-size": "13pt"})
     if bottom:
@@ -154,6 +159,7 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
 
 
 def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidget, QLabel]:
+    """``legend`` é HTML pronto: ``theme.phase_legend("V")`` ou ``_series_legend(...)``."""
     """Card com título e, à direita, a legenda das fases (fora da área das curvas)."""
     card = QWidget()
     card.setObjectName("plotCard")
@@ -166,7 +172,7 @@ def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidg
     head.addWidget(label)
     head.addStretch(1)
     if legend:
-        key = QLabel(theme.phase_legend(legend))
+        key = QLabel(legend)
         key.setObjectName("plotLegend")
         head.addWidget(key)
     layout.addLayout(head)
@@ -348,7 +354,7 @@ class TouchPanel(QWidget):
         self.ov_harmonic = _touch_plot()
         self.ov_harmonic.showGrid(x=False, y=True, alpha=0.15)
         # A forma de onda ganha mais largura; o diagrama fasorial é quadrado.
-        for title, plot, target, stretch, legend in (("TENSÕES", self.ov_wave, WAVES, 4, "V"),
+        for title, plot, target, stretch, legend in (("TENSÕES", self.ov_wave, WAVES, 4, theme.phase_legend("V")),
                                                      ("FASORES", self.ov_phasor, PHASORS, 3, ""),
                                                      ("HARMÔNICAS", self.ov_harmonic, PHASORS, 3, "")):
             card, _ = _plot_card(title, plot, legend)
@@ -369,9 +375,9 @@ class TouchPanel(QWidget):
                               for p in "ABC"}
         self.wave_i_curves = {p: self.wave_i.plot(pen=pg.mkPen(theme.PHASE[p], width=3), name=f"I{p.lower()}")
                               for p in "ABC"}
-        card, _ = _plot_card("TENSÕES", self.wave_v, "V")
+        card, _ = _plot_card("TENSÕES", self.wave_v, theme.phase_legend("V"))
         layout.addWidget(card, stretch=1)
-        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i, "I")
+        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i, theme.phase_legend("I"))
         layout.addWidget(card, stretch=1)
         return page
 
@@ -401,9 +407,11 @@ class TouchPanel(QWidget):
         self.trend_p_curve = self.trend_p.plot(pen=pg.mkPen(theme.SUCCESS, width=3),
                                                fillLevel=0, brush=pg.mkBrush(79, 209, 139, 40))
         self.trend_d_curve = self.trend_p.plot(pen=pg.mkPen(theme.WARNING, width=3, style=Qt.PenStyle.DashLine))
-        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v, "V")
+        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v, theme.phase_legend("V"))
         layout.addWidget(card, stretch=1)
-        card, self.trend_p_title = _plot_card("POTÊNCIA ATIVA TOTAL  ·  DEMANDA 15 MIN (TRACEJADO)", self.trend_p)
+        card, self.trend_p_title = _plot_card(
+            "POTÊNCIA", self.trend_p,
+            _series_legend((("━", "Potência ativa total", theme.SUCCESS), ("┅", "Demanda 15 min", theme.WARNING))))
         layout.addWidget(card, stretch=1)
         return page
 
