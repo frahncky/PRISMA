@@ -124,18 +124,20 @@ Fonte: esquema oficial da DEMOEM (NXP `DEMOEMSC.pdf`, "DEMOEM Schematic", P&E, r
 
 ### 4.5 Módulos de sensor sugeridos
 
-Não existe módulo dedicado à DEMOEM. Módulos comuns com saída **polarizada em VCC/2**, alimentados pelo 3,3 V do J1 (pinos 1 e 3), entram direto nas linhas do J38:
+Não existe módulo dedicado à DEMOEM. O que entra nas linhas do J38 precisa ficar **sempre entre 0 e 3,3 V**, centrado perto de 1,65 V (a polarização). O J1 só traz 3,3 V (pinos 1 e 3); o 5 V, quando necessário, vem de outra fonte com **GND comum** à DEMOEM.
 
-| Grandeza | Módulo | Ligação | Observação |
-| --- | --- | --- | --- |
-| Tensão | **ZMPT101B** (transformador de tensão + amplificador, ganho por trimpot) | OUT → `AD4`/`AD5`/`AD6` | Bornes do primário na tensão da rede: só dentro de caixa fechada. Pequeno atraso de fase, compensado pelo `delay_us` da calibração |
-| Tensão (mais seguro) | Fonte AC-AC de tomada 9 V + divisor e polarização em VCC/2 | Saída → `AD4`/`AD5`/`AD6` | A parte de rede fica toda dentro do plugue fechado |
-| Corrente | **TC de alicate SCT-013** (5 A a 100 A) + placa de interface com resistor de carga e polarização em VCC/2 | OUT → `DADP0`/`DADP1`/`DADP2`, J29 colocado | Isolado; abraça o fio sem abrir o circuito |
-| Corrente baixa | **ZMCT103C** (TC até ~5 A + amplificador) | OUT → `DADP0`/`DADP1`/`DADP2`, J29 colocado | O fio da carga passa por dentro do módulo |
+> **Atenção ao LM358.** A maioria dos módulos ZMPT101B e ZMCT103C usa o amplificador LM358, cuja saída não passa de ~VCC − 1,5 V. Em 3,3 V, ela para em ~1,8 V e corta o semiciclo positivo. Em 5 V, a polarização fica em 2,5 V e a saída chega a ~3,5 V, acima do ADC. Esses módulos vão em **5 V com divisor na saída**. A outra opção é um módulo com amplificador *rail-to-rail* que aceite 3,3 V (conferir no datasheet do amplificador da placa comprada).
 
-Não use o ACS712: precisa de 5 V e a saída passa da faixa do ADC.
+| Grandeza | Módulo | Alimentação | Ligação ao J38 | Observação |
+| --- | --- | --- | --- | --- |
+| Tensão (recomendado) | **Fonte AC-AC de tomada 9 V** + divisor passivo, polarizado em 1,65 V pelo 3,3 V do J1 | sem amplificador | saída → `AD4`/`AD5`/`AD6` | A parte de rede fica toda dentro do plugue fechado; não corta, porque não há amplificador. Exemplo: secundário → 100 kΩ → nó → 10 kΩ → 1,65 V (divisor de 2 × 10 kΩ entre 3,3 V e GND, com 10 µF) |
+| Tensão | **ZMPT101B** (transformador de tensão + LM358, ganho por trimpot) | **5 V** | OUT → divisor 10 kΩ (série) / 20 kΩ (ao GND) → `AD4`/`AD5`/`AD6` | O divisor ×2/3 leva a polarização de 2,5 V a ~1,67 V. Ajuste o trimpot para a senoide ficar entre ~0,3 e ~3,0 V no pino. Bornes do primário na tensão da rede: só dentro de caixa fechada |
+| Corrente | **TC de alicate SCT-013** + placa de interface passiva (resistor de carga + divisor de polarização) | 3,3 V do J1 | OUT → `DADP0`/`DADP1`/`DADP2`, J29 colocado | Isolado; abraça o fio sem abrir o circuito. Escolha a faixa perto da carga (5 A ou 10 A em bancada): abaixo de ~5 % da nominal a leitura piora |
+| Corrente baixa | **ZMCT103C** (TC até ~5 A + LM358) | **5 V** | OUT → divisor 10 kΩ / 20 kΩ → `DADP0`/`DADP1`/`DADP2`, J29 colocado | O fio da carga passa por dentro do módulo |
 
-Com a saída em VCC/2 no `DADPx` e o `DADMx` no GND, a diferência fica sempre positiva (≈ 0,15 a 3,15 V). O firmware atual lê sem mudança, e o RMS AC descarta o nível contínuo.
+Não use o ACS712: precisa de 5 V, a saída passa da faixa do ADC e o fio da carga passa pelo próprio módulo.
+
+Com a saída polarizada (~1,65 V) no `DADPx` e o `DADMx` no GND, a diferência fica sempre positiva, entre ≈ 0,15 e 3,15 V. O firmware atual lê sem mudança, e o RMS AC descarta o nível contínuo. Em **Análise → Sensores…**, ajuste a polarização de cada canal se ela não for 1,65 V (ex.: 1,67 V com o divisor ×2/3). No ZMPT101B com divisor, a relação "rede / saída no pino" já inclui o divisor, porque é medida no pino.
 
 | Experimento | Sensores | Jumpers do J38 a retirar |
 | --- | --- | --- |
@@ -147,10 +149,10 @@ Retire também os jumpers dos canais sem sensor, para o sinal do QE8 não aparec
 
 **Primeira ligação:**
 
-1. Alimente os módulos pelo J1 **sem o primário dos sensores na rede**. No osciloscópio do PRISMA, cada canal deve ficar parado em ~1,65 V (~32 000 contagens).
-2. Ligue um canal por vez. Ajuste o trimpot do ZMPT101B para a senoide não encostar em 0 nem em 3,3 V.
+1. Alimente os módulos (3,3 V do J1 ou 5 V com GND comum, conforme a tabela) **sem o primário dos sensores na rede**. Meça com o multímetro **no pino do J38**: tem de dar ~1,65 V, nunca acima de 3,3 V. No osciloscópio do PRISMA, cada canal deve ficar parado em ~32 000 contagens.
+2. Ligue um canal por vez. Confira que a senoide não encosta em 0 nem em 3,3 V (no ZMPT101B, ajuste o trimpot).
 3. Em **Análise → Sensores…**, escolha o módulo de cada canal: o app passa a mostrar V e A aproximados pela relação nominal ([instrumentação](instrumentacao.md#calibração-da-demoem-em-duas-etapas)).
-4. Calibre pelo assistente do app (etapa 1: ADC com tensão DC; etapa 2: sensores com multímetro) e meça o atraso de fase com carga resistiva.
+4. Calibre pelo assistente do app (etapa 1: ADC com tensão DC; etapa 2: sensores com multímetro) e meça o atraso de fase com carga resistiva. Sem essa calibração de fase, uma carga quase resistiva pode aparecer como indutiva ou capacitiva.
 
 ## 5. Comunicação serial — DEMOEM para PC ou ESP32-S3
 

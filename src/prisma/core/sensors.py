@@ -54,8 +54,8 @@ SENSORS: tuple[SensorModel, ...] = (
         "zmpt101b", "ZMPT101B (trimpot)", "voltage",
         (Param("line_v", "Tensão da rede", 127.0, "V RMS"), Param("pin_v", "Saída no pino", 0.9, "V RMS")),
         lambda p: p["line_v"] / p["pin_v"],
-        "O ganho depende do trimpot: com a rede ligada, leia o RMS da saída no PRISMA (volts no pino) "
-        "e a tensão da rede no multímetro."),
+        "Com LM358: alimentar em 5 V com divisor ×2/3 na saída (em 3,3 V a saída corta). O ganho depende "
+        "do trimpot e do divisor: com a rede ligada, leia o RMS no pino pelo PRISMA e a rede no multímetro."),
     SensorModel(
         "v_ratio", "Relação de tensão manual", "voltage",
         (Param("ratio", "Volts da rede por volt no pino", 100.0, "V/V"),),
@@ -69,7 +69,8 @@ SENSORS: tuple[SensorModel, ...] = (
         "ct_burden", "TC + resistor de carga", "current",
         (Param("turns", "Relação de espiras", 2000.0, ":1"), Param("burden_ohm", "Resistor de carga", 33.0, "Ω")),
         lambda p: p["turns"] / p["burden_ohm"],
-        "Ex.: SCT-013-000 (2000:1) ou ZMCT103C (1000:1) com o resistor de carga da placa de interface."),
+        "Ex.: SCT-013-000 (2000:1) com o resistor de carga da placa de interface. No ZMCT103C (1000:1) com LM358, "
+        "o amplificador e o divisor mudam a relação: prefira a relação manual medida."),
     SensorModel(
         "i_ratio", "Relação de corrente manual", "current",
         (Param("ratio", "Ampères por volt no pino", 30.0, "A/V"),),

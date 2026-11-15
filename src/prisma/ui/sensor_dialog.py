@@ -19,9 +19,10 @@ class SensorDialog(QDialog):
         self.setMinimumWidth(820)
         layout = QVBoxLayout(self)
         intro = QLabel("Escolha o módulo ligado em cada canal. O PRISMA calcula V e A <b>aproximados</b> pela "
-                       "relação nominal do sensor e centra a forma de onda na polarização do módulo (VCC/2 = "
+                       "relação nominal do sensor e centra a forma de onda na polarização medida no pino (padrão "
                        + f"{DEFAULT_BIAS_V:.2f}".replace(".", ",")
-                       + " V). Depois, refine com <b>2 · Sensores com multímetro</b>.")
+                       + " V; com módulo em 5 V e divisor ×2/3, ~1,67 V). Depois, refine com "
+                       "<b>2 · Sensores com multímetro</b>.")
         intro.setWordWrap(True)
         layout.addWidget(intro)
         grid = QGridLayout()
