@@ -149,3 +149,18 @@ def test_menu_abre_painel_da_janela_principal(app, tmp_path):
     assert len(panel.wave_v_curves["C"].getData()[0]) > 50
     panel.close()
     window.close()
+
+
+def test_eixos_mostram_mv_e_nao_fator_de_escala(app):
+    t, v, i = _waves()
+    panel = TouchPanel(lambda: PanelData(_measurement(), "Aquisição serial real", None, t, v * 1e-4, i))
+    panel.resize(1360, 768)
+    panel.show()
+    panel.show_page(WAVES)
+    panel.refresh()
+    app.processEvents()
+    label = panel.wave_v.getAxis("left").labelString()
+    assert "Tensão" in label and "(mV)" in label and "x0.001" not in label
+    assert "(A)" in panel.wave_i.getAxis("left").labelString()
+    assert not panel.trend_p.getAxis("left").autoSIPrefix  # "kW" já é a unidade
+    panel.close()

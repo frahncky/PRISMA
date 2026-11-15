@@ -136,6 +136,9 @@ class Tile(QPushButton):
         self.hint.setStyleSheet(f"color: {theme.WARNING}" if warn else "")
 
 
+SI_UNITS = {"V": "Tensão", "A": "Corrente"}
+
+
 def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
     plot = pg.PlotWidget()
     plot.setBackground(theme.SURFACE)
@@ -151,10 +154,15 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
         item.setTickFont(font)
     plot.getAxis("left").setWidth(64)  # cabe "-200" na fonte grande (senão o rótulo some)
     plot.getAxis("bottom").setHeight(56 if bottom else 34)  # números + rótulo sem sobrepor
-    if left:
-        plot.setLabel("left", left, **{"color": theme.MUTED, "font-size": "13pt"})
-    if bottom:
-        plot.setLabel("bottom", bottom, **{"color": theme.MUTED, "font-size": "13pt"})
+    style = {"color": theme.MUTED, "font-size": "13pt"}
+    for axis, text in (("left", left), ("bottom", bottom)):
+        if text in SI_UNITS:
+            # Com a unidade separada, o pyqtgraph troca o prefixo sozinho: mV, V, kV.
+            plot.setLabel(axis, SI_UNITS[text], units=text, **style)
+        elif text:
+            # Unidade já no texto (kW, ms, %): sem fator "(x0.001)" ao lado.
+            plot.setLabel(axis, text, **style)
+            plot.getAxis(axis).enableAutoSIPrefix(False)
     return plot
 
 
