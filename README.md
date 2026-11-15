@@ -92,6 +92,11 @@ Com a placa:
   <sub><b>Painel touch</b> (<code>--painel</code> ou F10): Visão geral, Valores, Formas de onda, Fasores e harmônicas, Energia e demanda e Tendências, com alvos grandes para toque</sub>
 </p>
 
+<p align="center">
+  <img src="docs/images/painel-1280x800-visao-geral.png" alt="Painel touch em 1280×800: quadro de valores por fase, indicadores, tensões, fasores e harmônicas numa tela só" width="70%"><br>
+  <sub><b>Tela de referência: 10,1" com 1280×800, IPS e toque capacitivo.</b> O painel cabe inteiro, sem rolagem (o layout pede no mínimo 1181×674). <a href="docs/images/painel-1280x800-todas.png">Ver as seis abas nesse tamanho</a></sub>
+</p>
+
 <table>
   <tr>
     <td align="center" width="50%"><img src="docs/images/prisma-analise.png" alt="Configuração de análise e tabela de potências por fase"><br><sub>Análise, calibração e potências AC</sub></td>
