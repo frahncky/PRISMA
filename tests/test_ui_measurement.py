@@ -390,3 +390,40 @@ def test_fasores_usam_fase_a_como_referencia_por_padrao(window):
     labels = {item.toPlainText() for item in window.phasor.getPlotItem().items if hasattr(item, "toPlainText")}
     assert {"Va", "Vb", "Vc", "Ia", "Ib", "Ic"} <= labels  # correntes também no diagrama
     assert window.phasor_title.text() == "FASORES"
+
+
+def test_energia_em_rajadas_usa_o_relogio_e_nao_seq_vezes_10s(window):
+    """Bug: cada rajada fica em t = seq × 10 s; a energia contava 10 s por bloco."""
+    from prisma.core.measurement import totals
+    from prisma.core.protocol import Sample, SampleBlock
+
+    now = [100.0]
+    window._clock = lambda: now[0]
+    fs, f = 1995.5, 60.0
+    phases = (0.0, -2 * np.pi / 3, 2 * np.pi / 3)
+
+    def block(seq):
+        samples = []
+        for i in range(500):
+            t = i / fs
+            v = [1.0 * np.sin(2 * np.pi * f * t + ph) for ph in phases]
+            c = [0.5 * np.sin(2 * np.pi * f * t + ph - 0.45) for ph in phases]
+            samples.append(Sample(seq * 10.0 + t, *v, *c))
+        return SampleBlock(seq, fs, ("ad4", "ad5", "ad6", "ad7", "ad8", "ad9"), tuple(samples))
+
+    for seq in range(5):              # 5 rajadas, uma a cada 0,55 s de relógio
+        window._on_block(block(seq))
+        for _ in range(10):           # a tela reanalisa o mesmo bloco várias vezes
+            window._draw_signals()
+            now[0] += 0.055
+    result = window.last_analysis[0]
+    p_total = totals(result).active_w
+    elapsed = 4 * 0.55                # entre a 1ª e a 5ª rajada
+    assert window.stats.energy.seconds == pytest.approx(elapsed, rel=1e-6)
+    assert window.stats.energy.active_wh == pytest.approx(p_total * elapsed / 3600, rel=0.02)
+    # Serial parada: reanalisar o último bloco não acumula nada.
+    before = window.stats.energy.active_wh
+    for _ in range(20):
+        now[0] += 0.05
+        window._draw_signals()
+    assert window.stats.energy.active_wh == before

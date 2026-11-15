@@ -90,6 +90,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         pg.setConfigOptions(antialias=True, background=theme.PLOT_BG, foreground=theme.MUTED)
         self.buffer = SignalBuffer()
         self.stats = MeterStats()
+        self._clock = time.monotonic  # substituível nos testes
+        self._energy_sample_t: float | None = None
         self.energy = self.stats.energy
         self.reader: SerialReader | None = None
         self.recorder: CsvRecorder | SqliteRecorder | None = None
@@ -866,7 +868,16 @@ class MainWindow(FeaturesMixin, QMainWindow):
             float(t[0]), float(t[-1]))
 
     def _show_energy(self, result, t_end: float) -> None:
-        self.stats.update(t_end, result)
+        """Acumula energia, demanda e tendência pelo relógio do computador.
+
+        O tempo das amostras não serve: em rajada cada bloco fica em seq × 10 s
+        (ver BURST_SPACING_S), o que multiplicaria a energia. Só conta quando
+        chegou amostra nova; a mesma janela reanalisada a cada 50 ms não soma
+        de novo, e uma serial parada não acumula valor antigo.
+        """
+        if t_end != self._energy_sample_t:
+            self._energy_sample_t = t_end
+            self.stats.update(self._clock(), result)
         if not result.power:
             self.energy_label.setText("---")
             self.reactive_energy_label.setText("---")
@@ -880,6 +891,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
     def reset_energy(self) -> None:
         self.stats.reset()
+        self._energy_sample_t = None
         if hasattr(self, "energy_label"):
             self.energy_label.setText("0 Wh")
             self.reactive_energy_label.setText("0 varh")

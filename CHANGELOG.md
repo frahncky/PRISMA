@@ -13,6 +13,7 @@
 - Gráficos com Va/Vb/Vc e Ia/Ib/Ic (legenda no título e rótulo na ponta dos fasores); FP com a natureza da carga (Indut./Capac.); coluna Trifásico indica "média" (V, I) ou "soma" (P, Q, S).
 - Fasores com a fase A como referência (0°) por padrão e correntes Ia/Ib/Ic tracejadas no diagrama, na janela principal e no painel.
 - README e banner atualizados com a identidade nova e o painel touch.
+- Correção: energia, demanda e tendências passam a usar o relógio do computador e só somam quando chega amostra nova. Em rajada (t = seq × 10 s) cada bloco contava 10 s em vez de ~0,55 s, inflando energia e demanda em ~18×.
 - Voz (perguntas, microfone e fala) retirada do painel por enquanto; `prisma.core.query`/`speech` e `ui/microphone.py` continuam no código para retomar depois.
 - **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
 
