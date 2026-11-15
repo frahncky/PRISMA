@@ -296,9 +296,10 @@ INFO_FORMAT = struct.Struct("<BBBBIHBBHI")
 ADC_CAL_NEVER = 0xFF
 
 
-def encode_command(command_id: int, code: int, args: bytes = b"") -> bytes:
-    if not 0 <= command_id <= 0xFF or not 0 <= code <= 0xFF or len(args) > MAX_COMMAND_ARGS:
-        raise ValueError("Comando requer id e código de 0 a 255 e até 14 bytes de argumento")
+def encode_command(command_id: int, code: int, args: bytes = b"", *, max_args: int = MAX_COMMAND_ARGS) -> bytes:
+    """``max_args``: 14 na aplicação; o bootloader aceita 138 (endereço + 128 bytes)."""
+    if not 0 <= command_id <= 0xFF or not 0 <= code <= 0xFF or len(args) > max_args:
+        raise ValueError(f"Comando requer id e código de 0 a 255 e até {max_args} bytes de argumento")
     return encode_frame(FRAME_COMMAND, bytes((command_id, code)) + bytes(args))
 
 

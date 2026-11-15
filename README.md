@@ -130,7 +130,7 @@ flowchart LR
 > [!WARNING]
 > Nunca ligue tensão de rede direto ao ADC ou aos pinos do microcontrolador. Medições reais exigem transdutores **isolados** e condicionamento. Os valores exibidos são estimativas, sem calibração certificada.
 
-Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
+Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
 
 ## 🗺️ Estado do projeto
 
@@ -233,6 +233,7 @@ Os testes cobrem protocolo, serial fragmentada, cálculos trifásicos, frequênc
 | :-: | --- | --- |
 | 🏛️ | [Arquitetura](docs/arquitetura.md) | Camadas do app e integração com o MCF51EM256 |
 | 📨 | [Protocolo serial](docs/protocolo.md) | Mensagens, unidades e limites da telemetria |
+| ⬆️ | [Bootloader/OTA](docs/bootloader.md) | Atualização do firmware pela serial, mapa de memória e segurança |
 | 📐 | [Instrumentação](docs/instrumentacao.md) | Frequência, harmônicas, potências, calibração |
 | 🔧 | [Toolchain](docs/toolchain.md) | Projetos, compilação, gravação e depuração |
 | 🧩 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos |

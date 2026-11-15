@@ -83,6 +83,7 @@
 - [Toolchain](toolchain.md): formato do projeto, execução, confirmação de gravação e limites do cliente GDB/MI.
 - [Instrumentação](instrumentacao.md): métodos, semântica das potências, calibração, histórico e relatórios.
 - [Firmware](../firmware/README.md): build host e requisitos do port ColdFire.
+- [Bootloader/OTA](bootloader.md): protocolo e núcleo testados no PC; projeto CodeWarrior e teste na placa pendentes.
 - [Plugins](plugins.md): perfis, protocolos incluídos e API de adaptadores instaláveis.
 
 Para encerrar todas as fases, preencher e executar os critérios físicos. Não marcar os itens pendentes como concluídos somente por existir uma interface, um template ou um simulador.

@@ -25,7 +25,9 @@
 
 #define PRISMA_FRAME_COMMAND 0x10U
 #define PRISMA_FRAME_REPLY 0x11U
-#define PRISMA_CMD_MAX_PAYLOAD 16U       /* id + código + até 14 bytes de argumento */
+#ifndef PRISMA_CMD_MAX_PAYLOAD
+#define PRISMA_CMD_MAX_PAYLOAD 16U       /* id + código + até 14 bytes; o bootloader define 140 (escrita de 128) */
+#endif
 
 #define PRISMA_CMD_INFO 0x01U            /* identifica firmware, canais e contadores */
 #define PRISMA_CMD_BURST 0x02U           /* u8: uma rajada a cada N janelas (0 = sem rajadas) */
