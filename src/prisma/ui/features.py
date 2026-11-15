@@ -62,6 +62,7 @@ class FeaturesMixin:
             ("Salvar diagnóstico serial/USB…", self.save_inventory),
             ("Carregar perfil de dispositivo…", self.load_device),
             ("Calibrar ADC com tensão DC…", self.calibrate_adc),
+            ("Perfis de sensor…", self.configure_sensors),
             ("Calibrar com multímetro…", self.calibrate_from_reference),
             ("Calibrar fase com carga resistiva…", self.calibrate_phase),
             ("Carregar calibração…", self.load_calibration),
@@ -122,9 +123,14 @@ class FeaturesMixin:
         calibrate.setToolTip("Com os sensores ligados: informe tensões e correntes RMS medidas; "
                              "o PRISMA calcula o ganho de cada canal.")
         calibrate.clicked.connect(self.calibrate_from_reference)
+        sensors = QPushButton("Sensores…")
+        sensors.setToolTip("Módulo ligado em cada canal (SCT-013, TC + resistor, transformador, ZMPT101B): "
+                           "V e A aproximados pela relação nominal, antes da etapa 2.")
+        sensors.clicked.connect(lambda _=False: self.configure_sensors())
         steps = QHBoxLayout()
         steps.setSpacing(8)
         steps.addWidget(calibrate_adc)
+        steps.addWidget(sensors)
         steps.addWidget(calibrate)
         form.addRow(self._muted("Calibrar"), steps)
         form.addRow(self._muted("Fasor selecionado"), self.selected_phasor)
@@ -461,6 +467,68 @@ class FeaturesMixin:
         self._log("ADC calibrado: " + "; ".join(
             f"{ch} = {fit.gain * 1e6:.3f} µV/contagem, offset {fit.offset * 1000:+.1f} mV, "
             f"maior desvio {fit.max_error_v * 1000:.1f} mV ({fit.points} pontos)" for ch, fit in fits.items()))
+
+    def _pin_map(self) -> dict[str, tuple[float, float]]:
+        """Volts no pino = g × contagem + o, por canal (correntes: tensão diferencial DADP − DADM).
+
+        Tensões usam a etapa 1 (ADC calibrado) se houver; senão, a escala nominal.
+        Correntes: binário deslocado, então o zero diferencial fica em 32768 contagens.
+        """
+        from prisma.ui.main_window import ADC_VREF_V, nominal_gain
+        adc = self.calibration.channels if self.calibration.pin_volts else {}
+        pin = {}
+        for channel in ("va", "vb", "vc"):
+            cfg = adc.get(channel)
+            pin[channel] = (cfg["gain"], cfg["offset"]) if cfg else (nominal_gain(channel), 0.0)
+        for channel in ("ia", "ib", "ic"):
+            pin[channel] = (nominal_gain(channel), -ADC_VREF_V)
+        return pin
+
+    def configure_sensors(self, choices: dict | None = None, filename: str | None = None) -> None:
+        """Perfis de sensor: V e A aproximados pela relação nominal de cada módulo.
+
+        Canais sem sensor ficam em volts no pino. Os atrasos de fase calibrados
+        são mantidos. ``choices``/``filename`` permitem executar sem diálogos (testes).
+        """
+        from prisma.core.measurement import WIRINGS
+        from prisma.core.sensors import SensorChoice, sensor_channels
+        saved = {}
+        try:
+            saved = {ch: SensorChoice.from_dict(c)
+                     for ch, c in json.loads(str(self.settings.value("sensors", "{}"))).items()}
+        except (ValueError, TypeError, KeyError):
+            saved = {}
+        if choices is None:
+            from prisma.ui.sensor_dialog import SensorDialog
+            phases = WIRINGS[getattr(self, "wiring", "tri")]
+            channels = tuple(f"v{p.lower()}" for p in phases) + tuple(f"i{p.lower()}" for p in phases)
+            dialog = SensorDialog(self, channels, saved)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            choices = dialog.choices()
+        if not choices:
+            QMessageBox.information(self, "Perfis de sensor", "Nenhum canal com sensor escolhido.")
+            return
+        pin = self._pin_map()
+        try:
+            channels = sensor_channels(choices, pin)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Perfis de sensor", str(exc))
+            return
+        # Canais sem sensor ficam em volts no pino (sem polarização descontada).
+        for channel, (g, o) in pin.items():
+            channels.setdefault(channel, {"gain": g, "offset": o})
+        for channel, cfg in self.calibration.channels.items():
+            if "delay_us" in cfg:
+                channels[channel]["delay_us"] = cfg["delay_us"]
+        calibration = Calibration(channels, f"Sensores nominais {datetime.now():%Y-%m-%d %H:%M}")
+        self._save_calibration(calibration, filename, "calibracao-sensores.json")
+        self._set_calibration(calibration)
+        self.settings.setValue("sensors", json.dumps({**{ch: c.to_dict() for ch, c in saved.items()},
+                                                      **{ch: c.to_dict() for ch, c in choices.items()}}))
+        self._log("Perfis de sensor: " + "; ".join(
+            f"{ch} = {c.ratio(ch):.4g} {'A' if ch.startswith('i') else 'V'}/V, polarização {c.bias_v:.3f} V"
+            for ch, c in choices.items()) + ". Valores aproximados: refine com o multímetro (etapa 2).")
 
     def _save_calibration(self, calibration: Calibration, filename: str | None, suggestion: str) -> None:
         if filename is None:

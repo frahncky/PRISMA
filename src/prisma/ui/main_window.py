@@ -451,9 +451,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         scope_title.setObjectName("panelTitle")
         scope_head.addWidget(scope_title)
         scope_head.addSpacing(14)
-        scope_legend = QLabel(theme.phase_legend("V"))
-        scope_legend.setStyleSheet("font-weight: 700;")
-        scope_head.addWidget(scope_legend)
+        self.scope_legend = QLabel(theme.phase_legend("V"))
+        self.scope_legend.setStyleSheet("font-weight: 700;")
+        scope_head.addWidget(self.scope_legend)
         scope_head.addStretch(1)
         self.trigger_check = QCheckBox("Disparo")
         self.trigger_check.setChecked(True)
@@ -1154,6 +1154,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         used = WIRINGS[wiring]
         for phase, curve in self.curves.items():
             curve.setVisible(phase in used)
+        self.scope_legend.setText(theme.phase_legend("V", used))
         if save:
             self.settings.setValue("wiring", wiring)
         if changed:

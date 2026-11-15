@@ -149,7 +149,8 @@ Retire também os jumpers dos canais sem sensor, para o sinal do QE8 não aparec
 
 1. Alimente os módulos pelo J1 **sem o primário dos sensores na rede**. No osciloscópio do PRISMA, cada canal deve ficar parado em ~1,65 V (~32 000 contagens).
 2. Ligue um canal por vez. Ajuste o trimpot do ZMPT101B para a senoide não encostar em 0 nem em 3,3 V.
-3. Calibre pelo assistente do app (etapa 1: ADC com tensão DC; etapa 2: sensores com multímetro) e meça o atraso de fase com carga resistiva.
+3. Em **Análise → Sensores…**, escolha o módulo de cada canal: o app passa a mostrar V e A aproximados pela relação nominal ([instrumentação](instrumentacao.md#calibração-da-demoem-em-duas-etapas)).
+4. Calibre pelo assistente do app (etapa 1: ADC com tensão DC; etapa 2: sensores com multímetro) e meça o atraso de fase com carga resistiva.
 
 ## 5. Comunicação serial — DEMOEM para PC ou ESP32-S3
 

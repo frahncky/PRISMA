@@ -183,9 +183,12 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
     return plot
 
 
-def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidget, QLabel]:
-    """``legend`` é HTML pronto: ``theme.phase_legend("V")`` ou ``_series_legend(...)``."""
-    """Card com título e, à direita, a legenda das fases (fora da área das curvas)."""
+def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "", phase_symbol: str = "") -> tuple[QWidget, QLabel]:
+    """Card com título e, à direita, a legenda (fora da área das curvas).
+
+    ``legend`` é HTML pronto (``_series_legend(...)``); ``phase_symbol`` ("V" ou "I")
+    gera a legenda das fases, que acompanha a ligação do experimento.
+    """
     card = QWidget()
     card.setObjectName("plotCard")
     card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -196,9 +199,12 @@ def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidg
     label.setObjectName("plotTitle")
     head.addWidget(label)
     head.addStretch(1)
+    if phase_symbol:
+        legend = theme.phase_legend(phase_symbol)
     if legend:
         key = QLabel(legend)
         key.setObjectName("plotLegend")
+        key.setProperty("phaseSymbol", phase_symbol)
         head.addWidget(key)
     layout.addLayout(head)
     layout.addWidget(plot, stretch=1)
@@ -435,10 +441,10 @@ class TouchPanel(QWidget):
         self.ov_harmonic = _touch_plot()
         self.ov_harmonic.showGrid(x=False, y=True, alpha=0.15)
         # A forma de onda ganha mais largura; o diagrama fasorial é quadrado.
-        for title, plot, target, stretch, legend in (("TENSÕES", self.ov_wave, WAVES, 4, theme.phase_legend("V")),
+        for title, plot, target, stretch, legend in (("TENSÕES", self.ov_wave, WAVES, 4, "V"),
                                                      ("FASORES", self.ov_phasor, PHASORS, 3, ""),
                                                      ("HARMÔNICAS", self.ov_harmonic, PHASORS, 3, "")):
-            card, _ = _plot_card(title, plot, legend)
+            card, _ = _plot_card(title, plot, phase_symbol=legend)
             # Tocar num gráfico em miniatura abre a aba com ele em tamanho grande.
             plot.scene().sigMouseClicked.connect(lambda _event, page=target: self.show_page(page))
             bottom.addWidget(card, stretch=stretch)
@@ -456,9 +462,9 @@ class TouchPanel(QWidget):
                               for p in "ABC"}
         self.wave_i_curves = {p: self.wave_i.plot(pen=pg.mkPen(theme.PHASE[p], width=3), name=f"I{p.lower()}")
                               for p in "ABC"}
-        card, _ = _plot_card("TENSÕES", self.wave_v, theme.phase_legend("V"))
+        card, _ = _plot_card("TENSÕES", self.wave_v, phase_symbol="V")
         layout.addWidget(card, stretch=1)
-        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i, theme.phase_legend("I"))
+        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i, phase_symbol="I")
         layout.addWidget(card, stretch=1)
         return page
 
@@ -488,7 +494,7 @@ class TouchPanel(QWidget):
         self.trend_p_curve = self.trend_p.plot(pen=pg.mkPen(theme.SUCCESS, width=3),
                                                fillLevel=0, brush=pg.mkBrush(79, 209, 139, 40))
         self.trend_d_curve = self.trend_p.plot(pen=pg.mkPen(theme.WARNING, width=3, style=Qt.PenStyle.DashLine))
-        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v, theme.phase_legend("V"))
+        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v, phase_symbol="V")
         layout.addWidget(card, stretch=1)
         card, self.trend_p_title = _plot_card(
             "POTÊNCIA", self.trend_p,
@@ -550,8 +556,9 @@ class TouchPanel(QWidget):
         self.link_banner.setText("⚠  " + problem)
         self.link_banner.setVisible(bool(problem))
         result = data.result
-        if result is not None:
+        if result is not None and tuple(result.phases) != self._phases:
             self._phases = tuple(result.phases)
+            self._update_legends()
         self.wiring_label.setText(WIRING_LABELS[_wiring_key(self._phases)])
         found = alerts(result) if result is not None else []
         self.alert_label.setText("⚠  " + "   ·   ".join(found))
@@ -567,6 +574,13 @@ class TouchPanel(QWidget):
             self._refresh_phasors(result)
         elif page == TRENDS:
             self._refresh_trends(data.stats)
+
+    def _update_legends(self) -> None:
+        """Legendas Va/Vb/Vc (e Ia/Ib/Ic) só com as fases da ligação."""
+        for key in self.findChildren(QLabel, "plotLegend"):
+            symbol = key.property("phaseSymbol")
+            if symbol:
+                key.setText(theme.phase_legend(symbol, self._phases))
 
     def _refresh_summary(self, result: Measurement | None, stats: MeterStats | None) -> None:
         if result is None:

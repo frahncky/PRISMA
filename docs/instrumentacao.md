@@ -48,6 +48,17 @@ valor_corrigido = valor_recebido × gain + offset
 Em **Análise → Fonte e calibração** (ou no menu **Dados e dispositivos**):
 
 1. **ADC com tensão DC** (só a placa, sem rede elétrica). Abra o J38 para desligar o gerador QE8. Ligue um potenciômetro de 10 kΩ entre o 3,3 V e o GND da própria DEMOEM e leve o cursor, por 1 kΩ, aos pinos do J38 do lado do microcontrolador (pode ligar AD4, AD5 e AD6 juntos). Para cada ponto, meça a tensão no pino com o multímetro, digite e clique em **Registrar ponto**. O assistente mostra a contagem média e o ruído da última rajada, aceita um ponto por rajada nova e recusa canais saturados (0 ou 65535). Use 3 pontos ou mais (ex.: 0,3 V, 1,6 V e 3,0 V). O resultado é a reta `volts = contagem × gain + offset` por canal, com o maior desvio dos pontos (verde abaixo de 5 mV). O perfil salvo leva `"pin_volts": true` e o app continua mostrando "Tensão no pino ADC".
+   **Entre as etapas: Sensores…** (perfis de sensor). Escolha o módulo ligado em cada canal das fases da ligação, e o app passa a mostrar V e A **aproximados** pela relação nominal:
+
+   | Sensor | Parâmetros | Relação (por volt no pino) |
+   | --- | --- | --- |
+   | Transformador + divisor | primário, secundário, resistores de cima e de baixo | `primário / secundário × (Rcima + Rbaixo) / Rbaixo` |
+   | ZMPT101B (trimpot) | tensão da rede e saída no pino, ambas RMS | `rede / pino` (o ganho é do trimpot: meça os dois) |
+   | SCT-013 com saída de 1 V | corrente nominal | `corrente nominal` A/V |
+   | TC + resistor de carga | relação de espiras e resistor de carga (ex.: SCT-013-000 2000:1, ZMCT103C 1000:1) | `espiras / resistor` A/V |
+   | Relação manual | relação conhecida | a própria |
+
+   O valor sai como `relação × (tensão no pino − polarização)`, com a polarização dos módulos em VCC/2 (1,65 V, ajustável). Assim a forma de onda fica centrada em zero. Correntes usam a tensão diferencial DADP − DADM (binário deslocado). Tensões partem da reta da etapa 1, se houver, ou da escala nominal. Canais sem sensor ficam em volts no pino, e atrasos de fase já calibrados são mantidos. As escolhas ficam salvas para a próxima vez.
 2. **Sensores com multímetro** (com transformador/divisor isolado e TCs ligados). Com carga estável, informe a tensão RMS de cada fase e, se houver canais de corrente, a corrente medida com alicate. O ganho de cada canal é multiplicado por `medido / exibido`, assim como o offset, e o perfil deixa de ser "volts no pino".
 
 A **calibração de fase com carga resistiva** vem depois da etapa 2 e preserva a etapa em que o perfil está. A calibração ativa é guardada nas configurações do app e volta na próxima abertura; **Restaurar calibração identidade** a remove.

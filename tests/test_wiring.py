@@ -118,3 +118,15 @@ def test_argumento_de_ligacao():
     assert parse_args(["--ligacao", "bi"]).ligacao == "bi"
     with pytest.raises(SystemExit):
         parse_args(["--ligacao", "quadri"])
+
+
+def test_legendas_acompanham_a_ligacao(app):
+    from PySide6.QtWidgets import QLabel
+    from prisma.ui.touch_panel import PanelData, TouchPanel
+    panel = TouchPanel(lambda: PanelData(with_wiring(_measurement(), "bi"), "DEMONSTRAÇÃO — SINAIS SINTÉTICOS"))
+    try:
+        legends = [k.text() for k in panel.findChildren(QLabel, "plotLegend") if k.property("phaseSymbol")]
+        assert legends and all("Va" in t or "Ia" in t for t in legends)
+        assert not any("Vc" in t or "Ic" in t for t in legends)
+    finally:
+        panel.close()

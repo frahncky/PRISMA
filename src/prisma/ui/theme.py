@@ -139,10 +139,10 @@ QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
 """
 
 
-def phase_legend(symbol: str) -> str:
-    """Legenda colorida "━ Va  ━ Vb  ━ Vc" (ou Ia/Ib/Ic) em HTML."""
+def phase_legend(symbol: str, phases="ABC") -> str:
+    """Legenda colorida "━ Va  ━ Vb  ━ Vc" (ou Ia/Ib/Ic) em HTML, só com as fases ligadas."""
     return "&nbsp;&nbsp;&nbsp;".join(
-        f"<span style='color:{PHASE[p]}'>━ {symbol}{p.lower()}</span>" for p in "ABC")
+        f"<span style='color:{PHASE[p]}'>━ {symbol}{p.lower()}</span>" for p in phases)
 
 
 def pill_style(kind: str) -> str:
