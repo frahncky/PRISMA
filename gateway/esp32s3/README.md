@@ -1,72 +1,86 @@
 # PRISMA — gateway ESP32-S3 / HMI / IoT
 
-**Estado: protótipo de firmware. Código publicado, sem compilação ou validação física da placa nesta sessão.**
+**Estado:** o firmware compila no PlatformIO para o ESP32-S3 DevKitC-1. O núcleo (protocolo v2, resumos e atualização da DEMOEM) foi testado no PC contra o bootloader simulado. **Ainda não foi gravado num ESP32-S3 nem ligado à DEMOEM.**
 
-Este projeto PlatformIO + Arduino para **ESP32-S3** é uma ponte entre a **DEMOEM/MCF51EM256** e o aplicativo PRISMA Studio. Não substitui os ADCs, não configura o ColdFire, não mede eletricidade por si só, não carrega baterias e não dirige uma tela TFT física.
+Este projeto PlatformIO + Arduino faz a ponte entre a **DEMOEM/MCF51EM256** e o PRISMA no PC. Também serve um painel web, publica MQTT e atualiza o firmware da DEMOEM por Wi-Fi. Ele não substitui os ADCs, não carrega baterias e não dirige uma tela TFT física.
 
-## Fluxo implementado em código
+## Fluxo
 
 ```mermaid
 flowchart LR
-  ColdFire["DEMOEM / MCF51EM256<br/>SCI transmitindo JSON PRISMA v1"] -->|UART 115200 8N1| ESP["ESP32-S3 gateway"]
-  ESP -->|USB CDC / JSON intacto| Desktop["PRISMA Studio<br/>gráficos + registro"]
-  ESP -->|HTTP LAN /api/status| Web["Painel touch web responsivo"]
-  ESP -->|MQTT com TLS/CA| Broker["Broker IoT"]
+  ColdFire["DEMOEM / MCF51EM256<br/>SCI3, protocolo v2"] <-->|"UART 115200 8N1<br/>RX e TX"| ESP["ESP32-S3 gateway"]
+  ESP <-->|"USB CDC<br/>ponte transparente"| Desktop["PRISMA no PC"]
+  ESP -->|"HTTP LAN<br/>/ e /api/status"| Web["Painel touch no navegador"]
+  Web -->|"POST /api/ota (token)"| ESP
+  ESP -->|"MQTT com TLS/CA"| Broker["Broker IoT"]
 ```
 
-- **UART só recepção**: o ESP não envia comandos à DEMOEM. Arquivo `src/main.cpp`.
-- **USB CDC**: retransmite somente linhas PRISMA JSON reconhecidas `sample` e `status` para o PRISMA desktop; outras mensagens são descartadas e contadas. Isso permite usar o ESP como ponte sem alterar o parser do PC.
-- **Resumo de 1 segundo**: estimativa RMS das componentes AC (subtraindo a média), correntes e potência ativa se **os três canais de corrente** existirem na amostra. Janelas com poucas amostras ficam inválidas; a leitura fica indisponível quando os dados ficam antigos. **Não calcula THD nem fasores** no ESP; esses cálculos permanecem no desktop.
-- **Web HMI**: interface responsiva para toque no navegador, em `http://IP_DO_ESP/`, sem driver gráfico externo. Exibe valor indisponível quando a fonte real não envia dados.
-- **IoT**: publica **resumos**, não todas as amostras, em `prisma/<device_id>/measurements`, usando MQTT/TLS com CA fornecida pelo operador. Desabilitado se faltarem credenciais/certificado.
-- **Diagnóstico**: `GET /api/status` inclui idade da última amostra, linhas inválidas, excedentes, perdas no USB, resets de timestamp, estado de Wi-Fi/MQTT e contadores MQTT.
-- **Bateria**: valor omitido (`null`) por padrão. Leitura ADC opcional apenas com divisor/proteção validados. **Não existe circuito ou código de carregamento**.
+- **Ponte transparente** (`src/main.cpp`): os bytes da placa vão intactos para a USB, e o PRISMA no PC decodifica o JSON e os quadros v2 como faz com o CH340. Os comandos do PC (identificar placa, rajadas, `scripts/atualizar_demoem.py`) vão da USB para a placa. Sem espaço na USB, o pedaço se perde e o PC descarta o quadro pelo CRC; o gateway conta esses bytes em `usb_drop_bytes`.
+- **Resumos da medição contínua** (`lib/prisma_link`): o gateway lê os quadros `0x02` (uma janela de ciclos inteiros por ~1 s). Ele calcula RMS AC, potência ativa e frequência com as somas inteiras exatas, como o `MeterSummary` do PC. As rajadas `0x01` (até 48 KB) têm o CRC conferido sem ficar na memória.
+- **Unidades:** sem ganhos, os valores saem em contagens do ADC (`v_unit: "counts"`). Com `PRISMA_CAL_GAINS` em `secrets.h`, eles saem em V, A e W. Use o `gain` de cada canal do perfil de calibração do PC. O `offset` não afeta o RMS AC. O `delay_us` (≈ 40 µs das correntes) não é compensado no ESP: o erro em P é de ~0,9° de fase, ou seja, < 0,02 % com FP 1 e maior com carga reativa.
+- **Atualização da DEMOEM** (`POST /api/ota`): recebe o S19 do `EM256 App` e grava pelo bootloader PRISMA ([docs/bootloader.md](../../docs/bootloader.md)). O fluxo e as garantias são os do gravador do PC: a aplicação só roda depois de a placa conferir o CRC-32, e uma gravação interrompida deixa a placa no bootloader. Fica **desligada** sem `PRISMA_OTA_TOKEN` (mínimo de 12 caracteres) e sem os dois pinos da UART. Durante a gravação, o ESP é dono da UART: a ponte USB e os resumos param.
+- **Painel web** em `http://IP_DO_ESP/`: valores por fase, frequência, diagnóstico e a aba "Atualizar DEMOEM".
+- **IoT:** publica um resumo por janela em `prisma/<device_id>/measurements` (`schema: prisma.gateway.v2`), por MQTT/TLS com a CA do operador. Fica desligado se faltarem credenciais ou o certificado; o código não usa `setInsecure()`.
+- **Bateria:** valor `null` por padrão. A leitura ADC é opcional e exige divisor e proteção validados. Não existe circuito nem código de carga.
+
+### API HTTP
+
+| Rota | O que faz |
+| --- | --- |
+| `GET /api/status` | Medição da última janela (`seq`, `window_s`, `f_Hz`, `vrms`, `irms`, `p`, unidades), idade, janelas perdidas, quadros, erros de CRC, bytes perdidos na USB, última mensagem da placa, Wi-Fi e MQTT. |
+| `GET /api/ota` | Estado da atualização: `idle`, `receiving`, `flashing`, `done` ou `failed`; etapa, progresso, reenvios, tamanho e CRC-32 da imagem, mensagem. |
+| `POST /api/ota` | Upload multipart do S19 com o cabeçalho `X-Prisma-Token`. Responde 202 e grava em segundo plano. |
+
+Pelo terminal:
+
+```bash
+curl -H "X-Prisma-Token: $TOKEN" -F "image=@firmware/codewarrior/EM256 App/bin/Project.abs.S19" http://IP_DO_ESP/api/ota
+curl http://IP_DO_ESP/api/ota
+```
 
 ## Instalação e configuração
 
-1. Instale VS Code + PlatformIO.
-2. Abra a pasta `gateway/esp32s3` como projeto no PlatformIO. O perfil inicial é `esp32-s3-devkitc-1`: troque `board` conforme a placa ESP32-S3 efetivamente adquirida.
-3. Copie `include/secrets.example.h` para `include/secrets.h`, ajuste `PRISMA_WIFI_SSID` e `PRISMA_WIFI_PASSWORD`. **Nunca versione** `secrets.h`.
-4. MQTT é **opcional**. Para ativar, informe servidor, porta, usuário, senha e **CA PEM real** do broker em `secrets.h`. O código **não usa** `setInsecure()`. O relógio via NTP precisa sincronizar antes da sessão TLS.
-5. Em `platformio.ini`, `PRISMA_UART_RX_GPIO=18` é **somente um exemplo de configuração ESP32-S3**. Confirme o pinout da placa, os pinos reservados, os níveis lógicos e a referência de GND **antes de ligar os fios**.
-6. Compile e grave o ESP pelo PlatformIO, inicialmente **sem DEMOEM ligada**. Teste boot e Wi-Fi. Encontre o IP pela tabela de clientes DHCP do roteador. A interface web **não tem senha** e só deve estar em LAN confiável e isolada.
-7. Depois de validar o firmware ColdFire e os níveis elétricos, conecte **SCI TX da DEMOEM → RX do ESP32-S3** (e terra lógico comum **somente** se o circuito tiver domínio SELV corretamente isolado); **não** conecte TX do ESP ao ColdFire nesta primeira versão.
-8. Confirme SCI/pinmux/jumpers na documentação e desabilite a interface P&E se houver conflito de drivers com a SCI externa. **Não** conecte RS-232 diretamente à UART 3,3 V.
-9. No PC, abra PRISMA, escolha a **porta COM do USB CDC do ESP32-S3**, a 115200 baud, e clique **Conectar serial**. Compare contagens no painel, `/api/status` e CSV do desktop.
-
-Comandos PlatformIO na pasta `gateway/esp32s3`:
+1. Instale o PlatformIO (`uv tool install platformio` ou a extensão do VS Code).
+2. O perfil é `esp32-s3-devkitc-1`. Troque `board` em `platformio.ini` conforme a placa adquirida.
+3. Copie `include/secrets.example.h` para `include/secrets.h` e ajuste o Wi-Fi. **Nunca versione** `secrets.h`. MQTT, o token de atualização e os ganhos são opcionais.
+4. `PRISMA_UART_RX_GPIO=18` e `PRISMA_UART_TX_GPIO=17` são **exemplos**. Confirme o pinout, os pinos reservados, os níveis lógicos (3,3 V) e o GND **antes de ligar os fios**. Com `PRISMA_UART_TX_GPIO=-1`, o gateway só recebe.
+5. Compile e grave o ESP **sem a DEMOEM ligada**. Teste o boot e o Wi-Fi, e encontre o IP na tabela DHCP do roteador.
+6. Ligue **TX3 da DEMOEM (PTC1, J6) → RX do ESP** e **TX do ESP → RX3 da DEMOEM (PTC0, J6, com J10 no PTC0)**. Nunca ligue RS-232 direto na UART de 3,3 V. O terra lógico comum só vale com domínio SELV isolado; caso contrário, use isolador de UART.
+7. No PC, abra o PRISMA, escolha a **porta COM do USB CDC do ESP32-S3** a 115200 baud e conecte. Compare as contagens do painel, do `/api/status` e do PC.
 
 ```bash
-pio run
-pio run -t upload
+cd gateway/esp32s3
+pio run              # compila
+pio run -t upload    # grava o ESP32-S3
 ```
 
-> `pio run` **não foi executado neste atendimento**. O build depende do Core/Arduino, PlatformIO e modelo de placa instalados no computador. O código é ponto de partida, não firmware homologado.
+## Testes
+
+`tests/test_gateway.py` compila `lib/prisma_link` com g++ no PC e confere:
+
+- o separador de quadros e o resumo `0x02` contra o decodificador Python, com texto, rajada grande, CRC errado, cabeçalho impossível e linha longa;
+- os ganhos;
+- a montagem do S19, que dá a mesma imagem e o mesmo CRC do PC e recusa o que está fora da área, na faixa reservada ou repetido;
+- a gravação de ponta a ponta no núcleo C real do bootloader (`prisma_boot.h`) com flash simulada. Cobre quatro casos: placa já no bootloader, placa rodando a aplicação (comando `0x04`), respostas perdidas e quadros da aplicação misturados com as respostas. Também grava a imagem compilada do `EM256 App`.
 
 ## Conectores e alimentação
 
 | Interface | Origem | Destino | Cuidados |
 | --- | --- | --- | --- |
-| Alimentação da DEMOEM | USB 5 V ou DC 6 V centro positivo | Placa DEMOEM | Validar J3/J4/J24 e regulador original; não alimentar por ligação improvisada |
-| Serial de medição | SCI3 TX DEMOEM (referência J6) | UART RX ESP32-S3 (GPIO configurado) | Confirmar esquema da revisão, multiplexação J9/J10/J7/J8 e lógica 3,3 V |
-| Massa lógica | GND da DEMOEM | GND ESP | Só com isolamento SELV comprovado; caso contrário, usar isolador UART |
-| USB para o PRISMA PC | USB do ESP32-S3 | Porta COM do Windows | Deve suportar USB CDC; não usar console de debug nessa porta |
-| Tela touch | HTTP servido pelo ESP | Celular/tablet/touchscreen com navegador | Para TFT embutido, **falta escolher módulo e integrar driver gráfico/touch específico** |
-| Alimentação ESP/HMI | DC/DC externo apropriado | ESP e eventual TFT | Dimensionar corrente de pico Wi-Fi + iluminação |
-| Bateria interna | Pack protegido, BMS/carga power-path | DC/DC e equipamentos | **Projeto elétrico pendente**, não conectar células diretamente à DEMOEM ou ESP |
+| Alimentação da DEMOEM | USB 5 V ou DC 6 V centro positivo | Placa DEMOEM | Validar J3/J4/J24 e o regulador original |
+| Serial da placa | SCI3 TX (PTC1, J6) | UART RX do ESP32-S3 | Confirmar o esquema da revisão, J9/J10/J7/J8 e a lógica de 3,3 V |
+| Comandos e atualização | UART TX do ESP32-S3 | SCI3 RX (PTC0, J6; J10 no PTC0) | Hoje o RX3 ainda não recebe com o CH340 ([bancada](../../docs/bancada-demoem.md)) |
+| Massa lógica | GND da DEMOEM | GND do ESP | Só com isolamento SELV comprovado; senão, isolador de UART |
+| PRISMA no PC | USB do ESP32-S3 | Porta COM do Windows | USB CDC; nenhum texto de depuração nessa porta |
+| Tela touch | HTTP servido pelo ESP | Navegador | TFT embutido: falta escolher o módulo e integrar o driver |
+| Alimentação ESP/HMI | DC/DC externo | ESP e eventual TFT | Dimensionar o pico do Wi-Fi e a iluminação |
+| Bateria interna | Pack protegido, BMS/carga power-path | DC/DC | **Projeto elétrico pendente** |
 
-A placa original possui LCD de segmentos (J26/J27) e teclas capacitivas (J35); **isso não constitui uma interface de display TFT touch**.
-
-## Fonte de dados e integridade
-
-O gateway só processa amostras válidas no formato `{"type":"sample","t":0.001,"va":...,"vb":...,"vc":...}`. Correntes `ia/ib/ic` devem vir **juntas** ou estar ausentes. Não preenche campos não medidos com valores sintéticos.
-
-A indicação **“dados recentes” não comprova que os sensores estejam calibrados**. O broker recebe `origin=DEMOEM-serial-unverified` enquanto não houver homologação. O tratamento de mensagens funciona em melhor esforço: a telemetria USB pode ser descartada sob congestionamento, com contador `usb_drops`. UART 115200 baud (8N1) tem limite físico nominal de ~11,5 kB/s, insuficiente para muitas amostras JSON quando se deseja análise até harmônica 15. Um protocolo binário com CRC, sequência e gerenciamento de vazão é etapa futura.
+O LCD de segmentos (J26/J27) e as teclas capacitivas (J35) da placa original não são uma tela TFT touch.
 
 ## Segurança e limitações
 
-- **Não conectar rede elétrica diretamente ao microcontrolador**, ao ESP, à USB do computador ou a qualquer entrada do ADC. Sensores e condicionamento devem ser isolados, protegidos e testados com baixa tensão primeiro.
-- A interface HTTP local **não possui autenticação**, HTTPS nem endurecimento de segurança; não disponibilizar na internet ou em redes compartilhadas.
-- Wi-Fi, MQTT, tela física, bateria e firmware ColdFire dependem de configuração e testes específicos do hardware.
-- Não foi realizado ensaio de autonomia, compatibilidade de energia simultânea USB/DC ou performance em produção.
-- Para mapa de jumpers, alimentação, aquisição e ensaios, consultar [guia de ligações da DEMOEM](../../docs/ligacoes-hardware-demoem.md).
+- **Não ligar a rede elétrica direto no microcontrolador**, no ESP, na USB do computador ou em entrada de ADC. Sensores e condicionamento devem ser isolados, protegidos e testados primeiro com baixa tensão.
+- A leitura HTTP não tem autenticação nem HTTPS. A atualização exige o token, mas ele trafega em HTTP sem TLS. Use só em LAN isolada e confiável, nunca exposta à internet.
+- A indicação "medindo" não comprova sensores calibrados. O broker recebe `origin=DEMOEM-serial-unverified` enquanto não houver homologação.
+- Wi-Fi, MQTT, tela física, bateria e a própria ponte dependem de testes no hardware real.

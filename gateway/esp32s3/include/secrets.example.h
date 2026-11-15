@@ -13,3 +13,10 @@
 // #define PRISMA_MQTT_CA_PEM R"PEM(-----BEGIN CERTIFICATE-----
 // ...certificado da autoridade certificadora...
 // -----END CERTIFICATE-----)PEM"
+// Atualização da DEMOEM pelo navegador (POST /api/ota). Vazio ou com menos de 12
+// caracteres: desligada. Use um valor longo e aleatório; a rede deve ser confiável
+// (o token vai em HTTP sem TLS).
+#define PRISMA_OTA_TOKEN ""
+// Ganhos por canal (va vb vc ia ib ic), unidade física por contagem, copiados do
+// "gain" do perfil de calibração do PC. Zeros: o painel e o MQTT mostram contagens.
+// #define PRISMA_CAL_GAINS {0.0061, 0.0061, 0.0061, 0.00042, 0.00042, 0.00042}

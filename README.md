@@ -150,7 +150,8 @@ Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [roteiro de ba
 | Telemetria por um único USB (serial virtual PEmicro) | ⏳ Driver atual não cria porta COM |
 | Depuração ColdFire pelo PRISMA (GDB) | ⏳ Sem GDB ColdFire V1 na instalação; depuração via HI-WAVE |
 | Medição calibrada e homologação física | ⏳ Pendente |
-| Gateway ESP32-S3, tela touch e bateria | 🧪 Código/projeto publicados, sem teste físico |
+| Gateway ESP32-S3: ponte USB, resumos v2, MQTT e atualização da DEMOEM por Wi-Fi | 🧪 Compila no PlatformIO; núcleo testado no PC; não gravado num ESP |
+| Tela touch física e bateria | 🧪 Projeto documentado, sem teste físico |
 
 Detalhes por fase no [roadmap](docs/roadmap.md) e no [histórico de versões](CHANGELOG.md).
 
@@ -208,7 +209,7 @@ A interface roda na thread principal do Qt e a leitura serial em uma `QThread` p
 ```text
 src/prisma/        app: ui/ (janela, instrumentos, editor) e core/ (protocolo, cálculos, serial)
 firmware/          encoder C, simulador host e projeto CodeWarrior da DEMOEM
-gateway/esp32s3/   gateway PlatformIO, painel web e MQTT
+gateway/esp32s3/   gateway PlatformIO: ponte USB, painel web, MQTT e atualização da DEMOEM
 examples/          telemetria, calibração, perfis e projetos de toolchain
 docs/              guias, protocolo, roadmap e imagens
 scripts/           diagnóstico de drivers no Windows
@@ -244,7 +245,7 @@ Os testes cobrem protocolo, serial fragmentada, cálculos trifásicos, frequênc
 | 🧩 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos |
 | 🧪 | [Bancada DEMOEM](docs/bancada-demoem.md) | Jumpers, testes e critérios de aceitação |
 | 🔌 | [Ligações da placa](docs/ligacoes-hardware-demoem.md) | Alimentação, sensores, UART, touch, bateria e IoT |
-| 📡 | [Gateway ESP32-S3](gateway/esp32s3/README.md) | PlatformIO, painel touch e MQTT/TLS |
+| 📡 | [Gateway ESP32-S3](gateway/esp32s3/README.md) | PlatformIO, ponte USB, painel touch, MQTT/TLS e OTA da DEMOEM |
 | 💾 | [Firmware](firmware/README.md) | Encoder C, simulador host e projeto CodeWarrior |
 | 🗺️ | [Roadmap](docs/roadmap.md) | Fases e pendências físicas |
 

@@ -10,6 +10,7 @@ Objetivo: atualizar o firmware da DEMOEM pela mesma serial da telemetria, sem o 
 | Gravador no PC (`prisma.core.bootloader`, `scripts/atualizar_demoem.py`) | Pronto. Lê o S19, repete o que se perde e só confirma com o CRC-32 da placa. |
 | Bootloader no CodeWarrior (`firmware/codewarrior/EM256 Boot`) | Compilado: ~5 KB no bloco 1, driver do bloco 2 e salto conferidos no mapa e no código gerado. **Não gravado.** |
 | Aplicação para o bootloader (`firmware/codewarrior/EM256 App`) | Compilada: ~7 KB a partir de 0x20000, vetores na RAM, interrupções terminando em `RTE`, comando `0x04`. **Não gravada.** |
+| Gravador no ESP32-S3 (`gateway/esp32s3`, `POST /api/ota`) | Pronto no código: mesmo fluxo do gravador do PC em C++ (`lib/prisma_link/prisma_ota.cpp`), testado no PC contra este núcleo C (`tests/test_gateway.py`). Compila para o ESP32-S3; não gravado num ESP. |
 | Teste na placa | **Bloqueado:** o RX3 (CH340 TXD → PTC0) ainda não recebe; ver [bancada](bancada-demoem.md). |
 
 ## Mapa de memória (MCF51EM256)
@@ -87,4 +88,4 @@ Depende do RX3: hoje o sinal do CH340 não chega ao PTC0.
 3. Testar o comando `0x04` (reiniciar no bootloader) e uma segunda atualização. Desligar a placa no meio de uma gravação e conferir que ela volta no bootloader.
 4. Se algo der errado, o PEmicro regrava o `EM256 Demo` como antes.
 
-Depois: o ESP32-S3 roda o mesmo fluxo do `BootClient`, com a imagem recebida por Wi-Fi.
+Pelo ESP32-S3: o mesmo fluxo roda no gateway, com o S19 recebido por Wi-Fi (`POST /api/ota` com o token, ou a aba "Atualizar DEMOEM" do painel web). Ver [gateway](../gateway/esp32s3/README.md). O gateway também é uma ponte USB transparente, então `scripts/atualizar_demoem.py` funciona pela porta COM do ESP.
