@@ -6,6 +6,7 @@ Exemplos:
     python -m prisma --last --screen 2
     python -m prisma --port prisma.local --connect --painel   # pelo gateway Wi-Fi
     python -m prisma --painel            # painel touch em tela cheia
+    python -m prisma --quiosque --port prisma.local   # medidor numa tela dedicada (docs/quiosque.md)
 """
 import argparse
 import json
@@ -26,6 +27,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--last", action="store_true", help="reusar a última porta e o último perfil e conectar")
     parser.add_argument("--screen", type=int, help="monitor onde abrir (1 = principal)")
     parser.add_argument("--painel", action="store_true", help="abrir o painel touch em tela cheia")
+    parser.add_argument("--quiosque", action="store_true",
+                        help="tela dedicada: só o painel, conecta e reconecta sozinho, sem demonstração "
+                             "(usa --port ou a última porta)")
+    parser.add_argument("--cursor", action="store_true", help="no quiosque, mantém o cursor do mouse visível")
     return parser.parse_args(argv)
 
 
@@ -56,8 +61,13 @@ def main(argv: list[str] | None = None) -> None:
             window._log(f"Calibração salva ignorada: {exc}")
     port = args.port or settings.value("last_port")
     if port and not window.select_port(port):
-        window._log(f"Porta {port} não encontrada.")
-        port = None
+        if args.quiosque:
+            # Na partida a USB pode ainda não ter enumerado: o quiosque espera pela porta.
+            window.port_combo.insertItem(0, f"{port} (aguardando)", port)
+            window.port_combo.setCurrentIndex(0)
+        else:
+            window._log(f"Porta {port} não encontrada.")
+            port = None
 
     screens = app.screens()
     target = None
@@ -66,11 +76,18 @@ def main(argv: list[str] | None = None) -> None:
         target = screens[screen_index - 1]
         window.setScreen(target)
         window.move(target.availableGeometry().topLeft())
-    window.showMaximized()
-    if port and (args.connect or args.last):
-        window.connect_serial()
-    if args.painel:
-        window.open_touch_panel(screen=target)
+    if args.quiosque:
+        window.enter_kiosk(screen=target, hide_cursor=not args.cursor)
+        if port:
+            window.connect_serial()
+        else:
+            window._log("Quiosque sem porta: informe --port (ex.: prisma.local ou COM3).")
+    else:
+        window.showMaximized()
+        if port and (args.connect or args.last):
+            window.connect_serial()
+        if args.painel:
+            window.open_touch_panel(screen=target)
     code = app.exec()
     current = window.screen()
     if current in screens:

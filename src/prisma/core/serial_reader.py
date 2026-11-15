@@ -26,6 +26,7 @@ class SerialReader(QThread):
         self.baudrate = baudrate
         self.parser = parser
         self.network = network_address(port) is not None
+        self.persistent = self.network  # serial também reconecta quando True (modo quiosque)
         self.idle_timeout = NETWORK_IDLE_S
         self.reconnect_delay = RECONNECT_S
         self._stop = threading.Event()
@@ -47,7 +48,7 @@ class SerialReader(QThread):
             handle.write(data)
 
     def run(self) -> None:
-        """Serial: uma sessão. Rede: reconecta sozinho (Wi-Fi cai, gateway reinicia) até ``stop``."""
+        """Serial: uma sessão (ou reconecta, com ``persistent``). Rede: reconecta sozinho até ``stop``."""
         label = link_label(self.port)
         try:
             while not self._stop.is_set():
@@ -55,7 +56,7 @@ class SerialReader(QThread):
                     self._session(label)
                 except Exception as exc:
                     self.message.emit(f"Erro de comunicação em {label}: {exc}")
-                if not self.network or self._stop.is_set():
+                if not self.persistent or self._stop.is_set():
                     break
                 self.reconnecting.emit()
                 self.message.emit(f"Reconectando a {label} em {self.reconnect_delay:g} s…")

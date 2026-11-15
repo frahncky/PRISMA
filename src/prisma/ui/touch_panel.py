@@ -4,6 +4,11 @@ Abas grandes na parte de baixo: Visão geral (tela inicial, tudo numa tela),
 Valores, Formas de onda, Fasores e harmônicas, Energia e demanda e Tendências.
 Tocar num bloco dos Valores ou num gráfico da Visão geral abre a aba com o
 detalhe. Alertas (THD, desequilíbrio, sequência inversa) aparecem em todas as abas.
+Sem dados novos da placa (conexão caída ou placa calada), uma faixa amarela avisa
+que os valores na tela são os últimos recebidos.
+
+No modo quiosque (tela dedicada, ``kiosk=True``) o botão Sair só age com toque
+longo, para ninguém fechar o medidor sem querer.
 """
 from __future__ import annotations
 
@@ -13,7 +18,7 @@ from typing import Callable
 
 import numpy as np
 import pyqtgraph as pg
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (QButtonGroup, QGridLayout, QHBoxLayout, QLabel, QMessageBox, QPushButton,
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
@@ -33,6 +38,7 @@ class PanelData:
     t: np.ndarray | None = None          # instantes das últimas amostras (s)
     voltages: np.ndarray | None = None   # N × 3
     currents: np.ndarray | None = None   # N × 3 ou None
+    age_s: float | None = None           # segundos desde o último dado da placa (None: sem placa)
 
 
 PanelSource = Callable[[], PanelData]
@@ -54,6 +60,8 @@ QLabel#pill {{ font-size: 15px; padding: 6px 16px; border-radius: 15px; }}
 QLabel#touchClock {{ color: {theme.TEXT}; font-size: 20px; font-weight: 600; }}
 QLabel#touchAlert {{ background: #3a1e22; color: #ffd0d3; border: 1px solid {theme.DANGER}; border-radius: 14px;
     padding: 12px 18px; font-size: 18px; font-weight: 600; }}
+QLabel#touchLink {{ background: #3a3018; color: #ffe2a8; border: 1px solid {theme.WARNING}; border-radius: 14px;
+    padding: 12px 18px; font-size: 20px; font-weight: 700; }}
 QLabel#plotLegend {{ font-size: 17px; font-weight: 700; }}
 QLabel#plotTitle {{ color: {theme.MUTED}; font-size: 17px; font-weight: 700; }}
 QWidget#plotCard {{ background: {theme.SURFACE}; border: 1px solid {theme.BORDER}; border-radius: 18px; }}
@@ -105,6 +113,14 @@ def _duration(seconds: float) -> str:
     minutes, sec = divmod(int(seconds), 60)
     hours, minutes = divmod(minutes, 60)
     return f"{hours:d}:{minutes:02d}:{sec:02d}"
+
+
+def _ago(seconds: float) -> str:
+    if seconds < 90:
+        return f"{seconds:.0f} s"
+    if seconds < 5400:
+        return f"{seconds / 60:.0f} min"
+    return f"{seconds / 3600:.1f} h".replace(".", ",")
 
 
 class Tile(QPushButton):
@@ -188,9 +204,46 @@ def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidg
     return card, label
 
 
+STALE_S = 3.0  # a placa manda um resumo por segundo
+HOLD_TO_EXIT_MS = 2000
+
+
+def link_problem(mode: str, age_s: float | None) -> str:
+    """Texto da faixa de aviso quando não chegam dados novos da placa; "" se está tudo bem."""
+    if mode.startswith("DEMONSTRAÇÃO"):
+        return ""
+    if mode.startswith("AQUISIÇÃO SERIAL REAL"):
+        if age_s is not None and age_s > STALE_S:
+            return f"Sem dados novos da placa há {_ago(age_s)}: valores congelados"
+        return ""
+    if mode.startswith("RECONECTANDO"):
+        target = mode.split(" — ")[0].removeprefix("RECONECTANDO A ")
+        return f"Conexão perdida: reconectando a {target}…  (valores congelados)"
+    if mode.startswith(("CONECTANDO", "SERIAL ")) and "DESCONECTADA" not in mode:
+        return "Aguardando dados da placa…"
+    return "Sem conexão com a placa" + (f": {mode.split(' — ', 1)[1].lower()}" if " — " in mode else "")
+
+
+class HoldButton(QPushButton):
+    """Botão que só dispara ``held`` depois de segurado por ``hold_ms``."""
+    held = Signal()
+
+    def __init__(self, text: str, hold_ms: int = HOLD_TO_EXIT_MS) -> None:
+        super().__init__(text)
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.setInterval(hold_ms)
+        self._timer.timeout.connect(self.held)
+        self.pressed.connect(self._timer.start)
+        self.released.connect(self._timer.stop)
+
+
 class TouchPanel(QWidget):
-    def __init__(self, source: PanelSource, parent: QWidget | None = None) -> None:
+    closed = Signal()
+
+    def __init__(self, source: PanelSource, parent: QWidget | None = None, kiosk: bool = False) -> None:
         super().__init__(parent, Qt.WindowType.Window)
+        self.kiosk = kiosk
         self.setObjectName("touchPanel")
         self.setWindowTitle("PRISMA · Painel")
         self.setStyleSheet(theme.STYLE + TOUCH_STYLE)
@@ -201,6 +254,11 @@ class TouchPanel(QWidget):
         root.setContentsMargins(24, 16, 24, 16)
         root.setSpacing(12)
         root.addLayout(self._build_header())
+        self.link_banner = QLabel("")
+        self.link_banner.setObjectName("touchLink")
+        self.link_banner.setWordWrap(True)
+        self.link_banner.hide()
+        root.addWidget(self.link_banner)
         self.alert_label = QLabel("")
         self.alert_label.setObjectName("touchAlert")
         self.alert_label.setWordWrap(True)
@@ -254,9 +312,15 @@ class TouchPanel(QWidget):
         self.clock.setObjectName("touchClock")
         top.addWidget(self.clock)
         top.addSpacing(18)
-        close = QPushButton("Sair")
+        if self.kiosk:
+            close = HoldButton("Sair (segure)")
+            close.setToolTip("Segure por 2 s para sair do painel e abrir a janela de manutenção")
+            close.held.connect(self.close)
+        else:
+            close = QPushButton("Sair")
+            close.clicked.connect(self.close)
         close.setObjectName("touchButton")
-        close.clicked.connect(self.close)
+        self.close_button = close
         top.addWidget(close)
         return top
 
@@ -473,6 +537,9 @@ class TouchPanel(QWidget):
         self.mode_label.setText(data.mode.split(" — ")[0].capitalize() or "Sem dados")
         self.mode_label.setToolTip(data.mode)
         self.mode_label.setStyleSheet(theme.pill_style(kind))
+        problem = link_problem(data.mode, data.age_s)
+        self.link_banner.setText("⚠  " + problem)
+        self.link_banner.setVisible(bool(problem))
         result = data.result
         found = alerts(result) if result is not None else []
         self.alert_label.setText("⚠  " + "   ·   ".join(found))
@@ -631,6 +698,7 @@ class TouchPanel(QWidget):
     def closeEvent(self, event) -> None:
         self.timer.stop()
         super().closeEvent(event)
+        self.closed.emit()
 
 
 def _rising_edge(t: np.ndarray, values: np.ndarray, span: float) -> int:

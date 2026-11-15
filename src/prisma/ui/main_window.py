@@ -112,6 +112,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.summaries_lost = 0
         self.energy = self.stats.energy
         self.reader: SerialReader | None = None
+        self.kiosk = False
+        self._last_data_clock: float | None = None  # chegada do último dado da placa (monotônico)
         self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
         self.demo_index = 0
@@ -633,8 +635,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Aguardando telemetria de estados do firmware.")
         self._invalid_sample_logs = 0
+        self._last_data_clock = None
         self._set_mode(f"CONECTANDO A {link_label(port)} — SEM DADOS")
         self.reader = SerialReader(port, self.device_profile.baudrate, parent=self, parser=self.sample_parser)
+        self.reader.persistent = self.reader.network or self.kiosk  # o quiosque não desiste da serial
         reader = self.reader
         self.reader.connected.connect(lambda: self._on_connected(port) if self.reader is reader else None)
         self.reader.sample_received.connect(lambda sample: self._on_sample(sample) if self.reader is reader else None)
@@ -662,6 +666,15 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._set_link_status(f"{link_label(port)} conectada", theme.SUCCESS)
         self._set_mode(f"SERIAL {link_label(port)} — AGUARDANDO AMOSTRAS")
 
+    def _mark_data(self) -> None:
+        self._last_data_clock = time.monotonic()
+
+    def data_age(self) -> float | None:
+        """Segundos desde o último dado da placa; None sem placa (demonstração ou nunca chegou)."""
+        if self.mode.startswith("DEMONSTRAÇÃO") or self._last_data_clock is None:
+            return None
+        return time.monotonic() - self._last_data_clock
+
     def _on_sample(self, sample: Sample, record_t: float | None = None) -> None:
         try:
             sample = self.calibration.apply(sample)
@@ -672,6 +685,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self._invalid_sample_logs += 1
             return
         self._record_sample(sample if record_t is None else replace(sample, t=record_t))
+        if record_t is None:
+            self._mark_data()
         if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
             port = link_label(self.reader.port) if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
@@ -719,6 +734,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         não é estimada: só contada em ``summaries_lost``.
         """
         self._enter_raw_mode()
+        self._mark_data()
         if not self._board_info_asked:
             # Resumo 0x02 prova firmware PRISMA contínuo: identifica sem atrapalhar outros aparelhos.
             self._board_info_asked = self.send_board_command(CMD_INFO, quiet=True)
@@ -782,6 +798,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
     def _on_block(self, block) -> None:
         """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
         self._enter_raw_mode()
+        self._mark_data()
         self._show_block(block, ADC_VREF_V, ADC_FULL_SCALE)
         last = self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
@@ -1093,7 +1110,44 @@ class MainWindow(FeaturesMixin, QMainWindow):
             if widget is current and hasattr(self, "page_title"):
                 self.page_title.setText(button.property("title"))
 
-    def open_touch_panel(self, fullscreen: bool = True, screen=None):
+    def enter_kiosk(self, screen=None, hide_cursor: bool = True):
+        """Medidor na tela dedicada: só o painel, sem demonstração; sair leva à manutenção."""
+        from PySide6.QtGui import QCursor
+        from PySide6.QtWidgets import QApplication
+        from prisma.ui.kiosk import keep_display_on
+        self.kiosk = True
+        if self.mode.startswith("DEMONSTRAÇÃO"):
+            # Um medidor nunca mostra valores sintéticos: limpa e espera a placa.
+            self.buffer.clear()
+            self.reset_energy()
+            self._invalidate_analysis()
+            self._set_mode("DESCONECTADO — NENHUMA PORTA CONFIGURADA")
+        if not keep_display_on(True):
+            self._log("Quiosque: a tela pode apagar sozinha (ajuste a energia do sistema; ver docs/quiosque.md).")
+        if hide_cursor:
+            QApplication.setOverrideCursor(QCursor(Qt.CursorShape.BlankCursor))
+        self._kiosk_cursor = hide_cursor
+        self.hide()
+        panel = self.open_touch_panel(screen=screen, kiosk=True)
+        panel.closed.connect(self.exit_kiosk)
+        return panel
+
+    def exit_kiosk(self) -> None:
+        if not self.kiosk:
+            return
+        from PySide6.QtWidgets import QApplication
+        from prisma.ui.kiosk import keep_display_on
+        self.kiosk = False
+        if self.reader is not None:
+            self.reader.persistent = self.reader.network
+        keep_display_on(False)
+        if getattr(self, "_kiosk_cursor", False):
+            QApplication.restoreOverrideCursor()
+            self._kiosk_cursor = False
+        self._log("Quiosque encerrado: janela de manutenção aberta (F10 volta ao painel).")
+        self.showMaximized()
+
+    def open_touch_panel(self, fullscreen: bool = True, screen=None, kiosk: bool = False):
         """Abre o painel touch (medidor inteligente em tela cheia) sobre a medição atual.
 
         ``screen`` fixa o monitor; sem ele, usa o da janela principal.
@@ -1104,10 +1158,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
             t, voltages = self.buffer.arrays(duration_s=0.12)
             currents = self.buffer.currents(duration_s=0.12)
             return PanelData(self.last_analysis[0] if self.last_analysis else None, self.mode, self.stats,
-                             t, voltages, currents)
+                             t, voltages, currents, self.data_age())
         panel = getattr(self, "touch_panel", None)
-        if panel is None or not panel.isVisible():
-            panel = TouchPanel(data, self)
+        if panel is None or not panel.isVisible() or panel.kiosk != kiosk:
+            if panel is not None and panel.isVisible():
+                panel.close()
+            panel = TouchPanel(data, self, kiosk=kiosk)
             panel.setWindowIcon(self.windowIcon())
             self.touch_panel = panel
         screen = screen or self.screen()

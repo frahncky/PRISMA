@@ -62,6 +62,8 @@ uv run python scripts\ponte_tcp.py --demo               # sem placa: demonstraç
 .\.venv\Scripts\python.exe -m prisma --port 192.168.0.20:3333 --connect --painel   # em outro PC ou na tela
 ```
 
+Numa tela dedicada (medidor), use o modo quiosque, que abre só o painel, conecta sozinho, reconecta e avisa quando os dados param: `python -m prisma --quiosque --port prisma.local` ([guia do quiosque](docs/quiosque.md), com partida automática no Windows e no Raspberry Pi).
+
 O app reconecta sozinho se o Wi-Fi cair. Pela rede só passam os comandos de identificar, de rajada e de autocalibração; a atualização de firmware continua local ([protocolo](docs/protocolo.md#pela-rede-tcp)).
 
 ## ✨ Recursos
@@ -145,7 +147,7 @@ flowchart LR
 > [!WARNING]
 > Nunca ligue tensão de rede direto ao ADC ou aos pinos do microcontrolador. Medições reais exigem transdutores **isolados** e condicionamento. Os valores exibidos são estimativas, sem calibração certificada.
 
-Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
+Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [modo quiosque](docs/quiosque.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
 
 ## 🗺️ Estado do projeto
 

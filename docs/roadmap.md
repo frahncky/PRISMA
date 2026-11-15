@@ -73,6 +73,7 @@
 - [x] Documentação de ligação, power-path, sensores, interfaces, riscos e testes
 - [ ] Gravação do firmware ESP32-S3 na placa adquirida e teste da ponte e da atualização com a DEMOEM
 - [ ] Teste de encaminhamento USB CDC (115200 8N1), perdas, latência e qualidade temporal
+- [x] Modo quiosque para tela dedicada (`--quiosque`): só o painel, sem demonstração, conexão e reconexão automáticas (rede e serial), aviso de dados parados, tela sempre ligada no Windows, saída por toque longo e partida automática (Windows e Linux); testado no PC, não num Raspberry Pi
 - [ ] Seleção/integração do módulo TFT/touch real com driver e alimentação próprios
 - [ ] Modelo de pack, BMS, carregador power-path, DC/DC e bateria testados e certificados
 - [ ] Validação de segurança da rede HTTP e de MQTT/TLS com broker real

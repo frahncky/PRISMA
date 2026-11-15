@@ -1,0 +1,11 @@
+# Partida automática do PRISMA em modo quiosque (Linux / Raspberry Pi OS).
+# Copie para ~/.config/autostart/ e ajuste o caminho do projeto e a porta.
+# Ver docs/quiosque.md.
+[Desktop Entry]
+Type=Application
+Name=PRISMA (quiosque)
+Comment=Medidor PRISMA em tela cheia
+Exec=/home/pi/PRISMA/.venv/bin/python -m prisma --quiosque --port prisma.local
+Path=/home/pi/PRISMA
+Terminal=false
+X-GNOME-Autostart-enabled=true
