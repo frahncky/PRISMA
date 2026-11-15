@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from prisma import __version__
-from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
+from prisma.core.measurement import (summary_measurement, LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
                                      sequence_components)
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
@@ -92,6 +92,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.stats = MeterStats()
         self._clock = time.monotonic  # substituível nos testes
         self._energy_sample_t: float | None = None
+        # Medição contínua da placa (quadros de resumo): energia sem lacunas.
+        self.last_summary = None
+        self._summary_clock: float | None = None  # relógio do PC na chegada do último resumo
+        self._summary_t: float | None = None      # base de tempo da energia: soma das janelas
+        self._last_summary_seq: int | None = None
+        self.summaries_lost = 0
         self.energy = self.stats.energy
         self.reader: SerialReader | None = None
         self.recorder: CsvRecorder | SqliteRecorder | None = None
@@ -570,6 +576,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reader.sample_received.connect(lambda sample: self._on_sample(sample) if self.reader is reader else None)
         self.reader.status_received.connect(lambda status: self._on_hardware_status(status) if self.reader is reader else None)
         self.reader.block_received.connect(lambda block: self._on_block(block) if self.reader is reader else None)
+        self.reader.summary_received.connect(lambda summary: self._on_summary(summary) if self.reader is reader else None)
         self.reader.message.connect(self._log)
         self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
         self.reader.start()
@@ -631,8 +638,55 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if self.raw_counts:
             self.phasor.enableAutoRange()
 
-    def _on_block(self, block) -> None:
-        """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
+    def _summary_fresh(self) -> bool:
+        """Chegou resumo da placa há pouco: energia e frequência vêm dele."""
+        return self._summary_clock is not None and self._clock() - self._summary_clock < 3.0
+
+    def _on_summary(self, summary) -> None:
+        """Janela contínua (~1 s) da placa: energia, demanda e frequência sem lacunas.
+
+        O tempo da energia é a soma das durações das janelas (relógio da placa),
+        a partir do relógio do PC no primeiro resumo. Janela perdida (seq salta)
+        não é estimada: só contada em ``summaries_lost``.
+        """
+        self._enter_raw_mode()
+        if self._last_summary_seq is not None and summary.seq > self._last_summary_seq + 1:
+            self.summaries_lost += summary.seq - self._last_summary_seq - 1
+        self._last_summary_seq = summary.seq
+        self.last_summary = summary
+        self._summary_clock = self._clock()
+        if self._summary_t is None:
+            self._summary_t = self._summary_clock
+        self._summary_t += summary.duration_s
+        gains = {ch: cfg["gain"] for ch, cfg in self._calibration_base().items()}
+        signs = {}
+        if self.last_analysis is not None:
+            signs = {p: -1.0 if x.reactive_fundamental_var < 0 else 1.0 for p, x in self.last_analysis[0].power.items()}
+        result = summary_measurement(summary, gains, signs)
+        self.stats.update(self._summary_t, result)
+        self._show_continuous(summary, result)
+
+    def _show_continuous(self, summary, result) -> None:
+        fmt = "{:.4f} V" if self._pin_volts() else "{:.2f} V"
+        values = " · ".join(f"{name.upper()} {fmt.format(result.rms[p])}"
+                            for name, p in zip(getattr(self, "block_names", ("va", "vb", "vc")), "ABC"))
+        frequency = (f"f = {summary.frequency_hz:.3f} Hz ({summary.cycles} ciclos)" if summary.synced
+                     else "sem cruzamentos (sinal DC ou ausente)")
+        problems = []
+        if summary.timeout_mask:
+            problems.append(f"timeout ADC {summary.timeout_mask}")
+        if self.summaries_lost:
+            problems.append(f"{self.summaries_lost} janela(s) perdida(s)")
+        self.continuous_label.setText(
+            f"<b>Medição contínua</b> · janela {summary.seq}: {summary.n} amostras ({summary.duration_s:.3f} s) · "
+            f"{frequency} · RMS {values}" + (f" · <span style='color:{theme.WARNING}'>⚠ {', '.join(problems)}</span>"
+                                             if problems else ""))
+        if summary.synced:
+            self.frequency_label.setText(f"{summary.frequency_hz:.3f} Hz")
+            self.frequency_hint.setText("medição contínua · janela de ~1 s")
+
+    def _enter_raw_mode(self) -> None:
+        """Primeira rajada ou resumo da placa: unidades de contagem e frequência automática."""
         if not self.raw_counts:
             self.raw_counts = True
             self._apply_units()
@@ -643,11 +697,15 @@ class MainWindow(FeaturesMixin, QMainWindow):
             if self.phasor_reference.currentIndex() == 0:
                 self.phasor_reference.setCurrentIndex(1)
             if not self.calibration.channels:
-                self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
+                self._log(f"Dados da placa recebidos: frequência em Automática (40–70 Hz). Sem calibração, os valores "
                           f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
             else:
-                self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Calibração ativa: "
+                self._log(f"Dados da placa recebidos: frequência em Automática (40–70 Hz). Calibração ativa: "
                           f"{self.calibration.name}.")
+
+    def _on_block(self, block) -> None:
+        """Rajada de taxa fixa: um reinício do firmware (seq menor) recomeça o buffer."""
+        self._enter_raw_mode()
         self._show_block(block, ADC_VREF_V, ADC_FULL_SCALE)
         last = self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
@@ -687,6 +745,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reset_energy()
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
+        self.last_summary = None
+        self._summary_clock = None
         self.demo_index = 0
         self._set_link_status("Serial desconectada", theme.SUBTLE)
         self._connect_button(False)
@@ -792,8 +852,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 self.details.setText(f"Análise indisponível: {exc}")
             return
         self._last_frequency = result.frequency_hz
-        self.frequency_label.setText(f"{result.frequency_hz:.2f} Hz")
-        self.frequency_hint.setText(("automática" if self.frequency_combo.currentIndex() == 2 else "referência fixa"))
+        if self._summary_fresh() and self.last_summary.synced:
+            self.frequency_label.setText(f"{self.last_summary.frequency_hz:.3f} Hz")
+            self.frequency_hint.setText("medição contínua · janela de ~1 s")
+        else:
+            self.frequency_label.setText(f"{result.frequency_hz:.2f} Hz")
+            self.frequency_hint.setText(("automática" if self.frequency_combo.currentIndex() == 2 else "referência fixa"))
         self.phasor.clear()
         self.phasor.addItem(pg.InfiniteLine(
             pos=0, angle=0, pen=pg.mkPen(theme.BORDER, width=1)
@@ -881,7 +945,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         chegou amostra nova; a mesma janela reanalisada a cada 50 ms não soma
         de novo, e uma serial parada não acumula valor antigo.
         """
-        if t_end != self._energy_sample_t:
+        # Com resumos da placa a energia já vem deles (_on_summary), sem lacunas.
+        if t_end != self._energy_sample_t and not self._summary_fresh():
             self._energy_sample_t = t_end
             self.stats.update(self._clock(), result)
         if not result.power:
@@ -898,6 +963,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
     def reset_energy(self) -> None:
         self.stats.reset()
         self._energy_sample_t = None
+        self._summary_t = None
+        self._last_summary_seq = None
+        self.summaries_lost = 0
         if hasattr(self, "energy_label"):
             self.energy_label.setText("0 Wh")
             self.reactive_energy_label.setText("0 varh")

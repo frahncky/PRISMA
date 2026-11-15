@@ -1,13 +1,14 @@
 """Thread isolada para telemetria serial: não modifica firmware."""
 import threading
 from PySide6.QtCore import QThread, Signal
-from .protocol import HardwareStatus, Sample, SampleBlock, StreamDecoder, parse_message
+from .protocol import HardwareStatus, MeterSummary, Sample, SampleBlock, StreamDecoder, parse_message
 
 class SerialReader(QThread):
     connected = Signal()
     sample_received = Signal(object)
     status_received = Signal(object)
     block_received = Signal(object)
+    summary_received = Signal(object)
     message = Signal(str)
     disconnected = Signal()
 
@@ -43,6 +44,8 @@ class SerialReader(QThread):
                             self.sample_received.emit(item)
                         elif isinstance(item, SampleBlock):
                             self.block_received.emit(item)
+                        elif isinstance(item, MeterSummary):
+                            self.summary_received.emit(item)
                         elif isinstance(item, HardwareStatus):
                             self.status_received.emit(item)
                         else:

@@ -63,7 +63,7 @@ Convive com o JSON na mesma serial: o leitor separa linhas de texto e quadros qu
 | Campo | Tipo | Observação |
 | --- | --- | --- |
 | sincronismo | `A5 5A` | |
-| tipo | u8 | `0x01` = rajada |
+| tipo | u8 | `0x01` = rajada · `0x02` = resumo da medição contínua |
 | len | u16 LE | bytes do payload |
 | payload | len bytes | |
 | CRC | u16 LE | CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) sobre tipo, len e payload |
@@ -73,6 +73,26 @@ Payload da rajada: `seq` u32, `fs_mhz` u32, `n` u16 (2..4096), máscara u8 (`0x0
 Um quadro com CRC inválido é descartado inteiro (pelo comprimento declarado) e contado. Cabeçalho inválido descarta até a próxima linha ou sincronismo.
 
 **Vazão a 115200 8N1 (≈ 11 520 B/s úteis):** cada amostra trifásica ocupa 6 bytes contra 12 do JSON hex. Isso dá ≈ 1 900 amostras/s com 3 canais ou ≈ 950 amostras/s com 6 canais, contínuos e sem folga. Para h15 a 60 Hz (Nyquist acima de 900 Hz, ou seja, mais de 1 800 amostras/s) com 6 canais, é preciso continuar em rajadas com pausa ou subir o baud (por exemplo, 460800).
+
+### Resumo da medição contínua (tipo 0x02)
+
+Com `PRISMA_CONTINUOUS` (padrão), a DEMOEM amostra sem parar na interrupção do MTIM1 (~1995,5 Hz) e acumula somas inteiras por janela (`firmware/include/prisma_meter.h`). Cada janela fecha no primeiro cruzamento ascendente da fase A pela sua média depois de ~1 s, então cobre ciclos inteiros, e as janelas são contíguas. Sem cruzamento (sinal DC ou ausente) a janela fecha em 1,25 s com a flag `0x08`.
+
+| Campo | Tipo | Observação |
+| --- | --- | --- |
+| seq | u32 | número da janela; um salto indica janela perdida |
+| fs_mhz | u32 | taxa de amostragem em mHz |
+| n | u32 | amostras da janela |
+| máscara | u8 | `0x07` (va, vb, vc) ou `0x3F` (va..ic) |
+| flags | u8 | bits 0–2: timeout ADC1..3 · `0x08`: sem cruzamentos · `0x10`: a janela anterior não foi lida a tempo |
+| ciclos | u16 | ciclos inteiros de A na janela |
+| period_q8 | u32 | do 1º cruzamento interno ao de fechamento, em 1/256 de amostra |
+| por canal | u32 + u64 | Σx e Σx² das contagens |
+| Σv·i | 3 × u64 | só com 6 canais: va·ia, vb·ib, vc·ic |
+
+O PC calcula com inteiros exatos: `RMS² = (n·Σx² − (Σx)²) / n²`, `P = (n·Σvi − Σv·Σi) / n²` (vezes os ganhos da calibração) e `f = (ciclos − 1) · fs / (period_q8 / 256)`. O período usa dois cruzamentos medidos com o mesmo limiar (a média de A só muda quando a janela fecha). No simulador do PC (`tests/test_meter_firmware.py`), o erro ficou abaixo de 0,0001 Hz e de ±0,03 % no RMS. Esse limite vem da borda da janela, que fica a até ½ amostra do cruzamento exato.
+
+A energia, a demanda e as tendências passam a vir desses resumos: o tempo é a soma das durações das janelas, sem lacunas e pelo relógio da placa. As rajadas (uma por resumo) continuam alimentando osciloscópio, fasores e harmônicas. As somas não dão o sinal de Q: o módulo é `√(S² − P²)` e o sinal vem da última análise de forma de onda. A compensação de atraso (`delay_us`) ainda não se aplica aos resumos.
 
 ### Calibração de fase
 

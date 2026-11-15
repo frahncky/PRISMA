@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 import math
 import numpy as np
-from .protocol import Sample
+from .protocol import MeterSummary, Sample
 
 PHASES = ("A", "B", "C")
 # Limites de referência do PRODIST Módulo 8 (baixa tensão, Vn ≤ 1 kV).
@@ -338,6 +338,28 @@ class MeterStats:
                 None if total is None else total.active_w, self.demand_w if total is not None else None))
             while len(self.trend) > self.trend_points:
                 self.trend.popleft()
+
+
+def summary_measurement(summary: MeterSummary, gains: dict[str, float],
+                        reactive_sign: dict[str, float] | None = None) -> Measurement:
+    """Grandezas de uma janela contínua da placa, com os ganhos da calibração.
+
+    RMS e P vêm das somas exatas (offset não importa: só a parte AC entra).
+    Sem fasores, as somas não dão o sinal de Q: o módulo é √(S² − P²) e o
+    sinal vem de ``reactive_sign`` (da última análise de forma de onda).
+    """
+    voltages, currents = ("va", "vb", "vc"), ("ia", "ib", "ic")
+    rms = {p: summary.ac_rms(i) * gains[voltages[i]] for i, p in enumerate(PHASES)}
+    current_rms, power = {}, {}
+    if summary.sumvi is not None:
+        for i, phase in enumerate(PHASES):
+            current_rms[phase] = summary.ac_rms(i + 3) * gains[currents[i]]
+            active = summary.active(i) * gains[voltages[i]] * gains[currents[i]]
+            apparent = rms[phase] * current_rms[phase]
+            reactive = math.sqrt(max(apparent ** 2 - active ** 2, 0.0)) * (reactive_sign or {}).get(phase, 1.0)
+            power[phase] = Power(active, reactive, apparent,
+                                 float(np.clip(active / apparent, -1, 1)) if apparent > 1e-12 else None)
+    return Measurement(rms, {}, [], summary.frequency_hz or 0.0, current_rms=current_rms, power=power)
 
 
 def load_nature(reactive_var: float, tolerance: float = 1e-9) -> str:

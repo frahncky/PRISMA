@@ -188,7 +188,96 @@ def parse_burst_frame(payload: bytes) -> SampleBlock:
                        wire_bytes=len(payload) + 7)
 
 
-FRAME_PARSERS = {FRAME_BURST: parse_burst_frame}
+FRAME_SUMMARY = 0x02
+SUMMARY_HEADER = struct.Struct("<IIIBBHI")
+FLAG_NO_SYNC = 0x08
+FLAG_OVERRUN = 0x10
+
+
+@dataclass(frozen=True)
+class MeterSummary:
+    """Somas de uma janela contínua da placa (contagens brutas, ciclos inteiros de A).
+
+    O firmware não faz conta em ponto flutuante: manda Σx, Σx² e Σv·i, e aqui
+    saem média, RMS AC e potência com inteiros exatos (ver prisma_meter.h).
+    """
+    seq: int
+    fs_hz: float
+    n: int
+    channels: tuple[str, ...]
+    sums: tuple[int, ...]
+    sumsq: tuple[int, ...]
+    sumvi: tuple[int, ...] | None
+    cycles: int
+    period_q8: int
+    flags: int = 0
+
+    @property
+    def duration_s(self) -> float:
+        return self.n / self.fs_hz
+
+    @property
+    def timeout_mask(self) -> int:
+        return self.flags & 0x07
+
+    @property
+    def synced(self) -> bool:
+        return not self.flags & FLAG_NO_SYNC and self.cycles >= 2 and self.period_q8 > 0
+
+    @property
+    def overrun(self) -> bool:
+        return bool(self.flags & FLAG_OVERRUN)
+
+    @property
+    def frequency_hz(self) -> float | None:
+        """Ciclos entre o 1º cruzamento interno e o de fechamento (interpolados, mesmo limiar)."""
+        return (self.cycles - 1) * self.fs_hz * 256 / self.period_q8 if self.synced else None
+
+    def mean(self, index: int) -> float:
+        return self.sums[index] / self.n
+
+    def ac_rms(self, index: int) -> float:
+        """RMS sem a componente contínua, em contagens."""
+        n, total = self.n, self.sums[index]
+        return math.sqrt(max(n * self.sumsq[index] - total * total, 0)) / n
+
+    def active(self, phase: int) -> float | None:
+        """Média de (v − v̄)(i − ī) da fase, em contagens², ou None sem correntes."""
+        if self.sumvi is None:
+            return None
+        n = self.n
+        return (n * self.sumvi[phase] - self.sums[phase] * self.sums[phase + 3]) / (n * n)
+
+
+def parse_summary_frame(payload: bytes) -> MeterSummary:
+    if len(payload) < SUMMARY_HEADER.size:
+        raise ValueError("Resumo binário truncado")
+    seq, fs_mhz, n, mask, flags, cycles, period_q8 = SUMMARY_HEADER.unpack_from(payload)
+    if mask not in (0x07, 0x3F):
+        raise ValueError("Máscara de canais deve ser 0x07 (tensões) ou 0x3F (tensões e correntes)")
+    if n < 2 or not 1_000 <= fs_mhz <= 1_000_000_000:
+        raise ValueError("Resumo binário requer n ≥ 2 e fs_mhz válido")
+    k = 3 if mask == 0x07 else 6
+    if len(payload) != SUMMARY_HEADER.size + 12 * k + (24 if k == 6 else 0):
+        raise ValueError("Tamanho do resumo binário incompatível com os canais")
+    pairs = struct.unpack_from("<" + "IQ" * k, payload, SUMMARY_HEADER.size)
+    sumvi = (struct.unpack_from("<3Q", payload, SUMMARY_HEADER.size + 12 * k) if k == 6 else None)
+    return MeterSummary(seq, fs_mhz / 1000.0, n, FRAME_CHANNELS[:k], pairs[0::2], pairs[1::2],
+                        sumvi, cycles, period_q8, flags)
+
+
+def encode_summary(summary: MeterSummary) -> bytes:
+    """Quadro tipo 0x02 igual ao do firmware (testes e simuladores)."""
+    k = len(summary.channels)
+    payload = SUMMARY_HEADER.pack(summary.seq, round(summary.fs_hz * 1000), summary.n, {3: 0x07, 6: 0x3F}[k],
+                                  summary.flags, summary.cycles, summary.period_q8)
+    payload += b"".join(struct.pack("<IQ", s, q) for s, q in zip(summary.sums, summary.sumsq))
+    if summary.sumvi is not None:
+        payload += struct.pack("<3Q", *summary.sumvi)
+    return encode_frame(FRAME_SUMMARY, payload)
+
+
+FRAME_PARSERS = {FRAME_BURST: parse_burst_frame, FRAME_SUMMARY: parse_summary_frame}
 
 
 class StreamDecoder:

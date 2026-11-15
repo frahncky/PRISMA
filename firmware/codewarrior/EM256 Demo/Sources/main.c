@@ -40,6 +40,21 @@ const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 #include "../../../include/prisma_frame_stream.h"
 #endif
 
+/* 1: medição contínua. A interrupção do MTIM1 amostra sem parar e acumula
+ * somas por janela de ciclos inteiros (prisma_meter.h); o laço principal envia
+ * um resumo por janela (~1 s, quadro 0x02) e uma rajada de forma de onda por
+ * resumo (quadro 0x01). Exige PRISMA_BINARY.
+ * 0: modo rajada anterior (adquire, para, transmite), validado em bancada. */
+#ifndef PRISMA_CONTINUOUS
+#define PRISMA_CONTINUOUS 1
+#endif
+#if PRISMA_CONTINUOUS
+#if !PRISMA_BINARY
+#error "PRISMA_CONTINUOUS requer PRISMA_BINARY"
+#endif
+#include "../../../include/prisma_meter.h"
+#endif
+
 static byte adc_timeout;
 
 static void InitSystems(void)
@@ -241,6 +256,18 @@ static word ADC3_Read(byte channel, byte differential)
 static word burst_data[BURST_SAMPLES][3];
 static word burst_seq;
 
+#if PRISMA_CONTINUOUS
+/* Janela de ~1 s (amostras inteiras de fs); sem cruzamento, fecha em 1,25 s. */
+#define METER_MIN_SAMPLES (BURST_FS_MHZ / 1000UL)
+#define METER_MAX_SAMPLES (METER_MIN_SAMPLES + METER_MIN_SAMPLES / 4UL)
+#define METER_HYSTERESIS 256U                  /* contagens (~13 mV no pino) */
+
+static prisma_meter meter;
+static volatile byte burst_armed;              /* laço pediu uma rajada */
+static volatile byte burst_ready;              /* rajada completa, aguardando envio */
+static volatile word burst_fill;
+#endif
+
 static void MTIM1_Init(void)
 {
   MTIM1SC = 0x10U;                            /* TSTP: stop while configuring. */
@@ -248,6 +275,45 @@ static void MTIM1_Init(void)
   MTIM1MOD = BURST_MTIM_MOD;
   MTIM1SC = 0x20U;                            /* TRST: reset, run, no IRQ. */
 }
+
+#if PRISMA_CONTINUOUS
+/*
+ * Uma amostra por estouro do MTIM1 (~1995,5 Hz). Lê o resultado da conversão
+ * disparada no tick anterior (pronta há ~500 us) e dispara a próxima logo em
+ * seguida: os três ADCs começam juntos e sempre no mesmo ponto do tick, sem
+ * espera ativa dentro da interrupção. COCO ainda zerado = conversão perdida.
+ */
+/* Sintaxe do porting support HCS08 do projeto: a entrada do vetor 75 sai daqui
+ * e substitui a fraca (weak) de exceptions.c. */
+interrupt VectorNumber_Vmtim1 void MTIM1_ISR(void)
+{
+  unsigned short x[3];
+  byte timeout = 0U;
+
+  MTIM1SC = (byte)(MTIM1SC & (byte)~0x80U);   /* Read-then-write clears TOF. */
+  if (ADC1SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x01U); }
+  if (ADC2SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x02U); }
+  if (ADC3SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x04U); }
+  x[0] = ADC3RA;                              /* AD4 */
+  x[1] = ADC1RA;                              /* AD5 */
+  x[2] = ADC2RA;                              /* AD6 */
+  ADC3SC1A = 4U;
+  ADC1SC1A = 5U;
+  ADC2SC1A = 6U;
+
+  prisma_meter_sample(&meter, x, timeout);
+  if (burst_armed != 0U) {
+    burst_data[burst_fill][0] = x[0];
+    burst_data[burst_fill][1] = x[1];
+    burst_data[burst_fill][2] = x[2];
+    adc_timeout = (byte)(adc_timeout | timeout);
+    if (++burst_fill >= BURST_SAMPLES) {
+      burst_armed = 0U;
+      burst_ready = 1U;
+    }
+  }
+}
+#endif
 
 static void MTIM1_WaitTick(void)
 {
@@ -381,6 +447,39 @@ void main(void)
   (void)ADC3_Read(4U, 0U);
   (void)ADC1_Read(5U, 0U);
   (void)ADC2_Read(6U, 0U);
+#if PRISMA_CONTINUOUS
+  SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"CONTINUOUS MODE\"}\r\n");
+  prisma_meter_init(&meter, 3U, METER_MIN_SAMPLES, METER_MAX_SAMPLES, METER_HYSTERESIS);
+  burst_armed = 0U;
+  burst_ready = 0U;
+  ADC3SC1A = 4U;                              /* Primeira conversão para o 1º tick. */
+  ADC1SC1A = 5U;
+  ADC2SC1A = 6U;
+  MTIM1SC = 0x60U;                            /* TOIE + TRST: run with IRQ. */
+  EnableInterrupts;
+
+  for (;;) {
+    if (meter.ready_flag != 0U) {
+      prisma_meter_window window;
+      DisableInterrupts;                      /* Cópia sem a interrupção no meio. */
+      window = meter.ready;
+      meter.ready_flag = 0U;
+      EnableInterrupts;
+      prisma_meter_send(&window, 3U, SCI3_PutByte, BURST_FS_MHZ);
+      if ((burst_armed == 0U) && (burst_ready == 0U)) {
+        adc_timeout = 0U;
+        burst_fill = 0U;
+        burst_armed = 1U;                     /* Próximos 500 ticks viram rajada. */
+      }
+    }
+    if (burst_ready != 0U) {
+      Burst_Send();                           /* ~0,26 s a 115200; a amostragem segue. */
+      ++burst_seq;
+      burst_ready = 0U;
+      PTAD_PTAD5 = (byte)!PTAD_PTAD5;
+    }
+  }
+#else
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"BURST MODE\"}\r\n");
 
   for (;;) {
@@ -390,4 +489,5 @@ void main(void)
     ++burst_seq;
     PTAD_PTAD5 = (byte)!PTAD_PTAD5;
   }
+#endif
 }

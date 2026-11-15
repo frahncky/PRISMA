@@ -11,7 +11,7 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
-    QScrollArea,
+    QScrollArea, QSizePolicy,
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
@@ -186,12 +186,20 @@ class FeaturesMixin:
 
         hardware = QWidget()
         hw_layout = QVBoxLayout(hardware)
-        hw_layout.setContentsMargins(20, 16, 20, 12)
-        hw_layout.setSpacing(12)
+        hw_layout.setContentsMargins(20, 12, 20, 12)
+        hw_layout.setSpacing(8)
         self.hardware_summary = QLabel("Sem telemetria da placa. Conecte a serial para ver os canais do ADC.")
         self.hardware_summary.setObjectName("muted")
-        self.hardware_summary.setWordWrap(True)
         hw_layout.addWidget(self.hardware_summary)
+        self.continuous_label = QLabel("Medição contínua: aguardando resumos da placa (firmware com PRISMA_CONTINUOUS).")
+        self.continuous_label.setObjectName("muted")
+        self.continuous_label.setTextFormat(Qt.TextFormat.RichText)
+        hw_layout.addWidget(self.continuous_label)
+        # Uma linha cada, sem quebra: rótulo com quebra dentro de QScrollArea faz a
+        # página assumir a altura "ideal" e rolar à toa. Texto longo é cortado na borda.
+        for label in (self.hardware_summary, self.continuous_label):
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+            label.setMinimumWidth(1)
 
         # Última rajada: forma de onda bruta e estatística por canal.
         burst_card = QFrame()

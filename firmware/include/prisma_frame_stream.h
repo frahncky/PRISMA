@@ -42,6 +42,18 @@ static void prisma_stream_long(prisma_stream *s, unsigned long value)
     prisma_stream_word(s, (unsigned short)((value >> 16) & 0xFFFFUL));
 }
 
+/* Sincronismo, tipo e tamanho do payload; o CRC cobre tipo, tamanho e payload. */
+static void prisma_stream_begin(prisma_stream *s, prisma_put_byte_fn put, unsigned char type,
+                                unsigned short length)
+{
+    s->put = put;
+    put(0xA5U);
+    put(0x5AU);
+    s->crc = 0xFFFFU;
+    prisma_stream_byte(s, type);
+    prisma_stream_word(s, length);
+}
+
 /* n de 2 a 4096; mask 0x07 (3 canais) ou 0x3F (6 canais). Sem validação:
  * os parâmetros são constantes do firmware. */
 static void prisma_stream_begin_burst(prisma_stream *s, prisma_put_byte_fn put, unsigned long seq,
@@ -49,12 +61,7 @@ static void prisma_stream_begin_burst(prisma_stream *s, prisma_put_byte_fn put, 
                                       unsigned char flags)
 {
     unsigned short channels = (unsigned short)(mask == 0x3FU ? 6U : 3U);
-    s->put = put;
-    put(0xA5U);
-    put(0x5AU);
-    s->crc = 0xFFFFU;
-    prisma_stream_byte(s, 0x01U);
-    prisma_stream_word(s, (unsigned short)(12U + 2U * n * channels));
+    prisma_stream_begin(s, put, 0x01U, (unsigned short)(12U + 2U * n * channels));
     prisma_stream_long(s, seq);
     prisma_stream_long(s, fs_mhz);
     prisma_stream_word(s, n);

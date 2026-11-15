@@ -12,7 +12,8 @@ Este diretório contém um encoder JSON em C99, uma aplicação usando HAL, um s
 | `src/main.c` | Loop de aquisição e envio, com mensagem de estados a cada 1000 amostras. |
 | `ports/host_simulator.c` | Sinais sintéticos no computador, sem acesso a hardware. |
 | `ports/mcf51em256_port.example.c` | Port pendente, bloqueado por `#error` até configurar o hardware real. |
-| `codewarrior/EM256 Demo/Sources/main.c` | Firmware de bancada validado: rajadas de 500 amostras AD4/AD5/AD6 a ~1995 Hz (MTIM1), SCI3 a 115200 8N1 (`PRISMA_SCI_BAUD`) e trim do oscilador em 0x3FE/0x3FF. |
+| `codewarrior/EM256 Demo/Sources/main.c` | Firmware da DEMOEM: AD4/AD5/AD6 a ~1995 Hz (MTIM1), SCI3 a 115200 8N1 (`PRISMA_SCI_BAUD`) e trim do oscilador em 0x3FE/0x3FF. Com `PRISMA_CONTINUOUS=1` (padrão) amostra sem parar na interrupção do MTIM1 e envia um resumo por janela de ~1 s mais uma rajada de 500 amostras; com `0`, volta ao modo rajada anterior (adquire, para e transmite), validado em bancada. |
+| `include/prisma_meter.h` | Núcleo da medição contínua em C89 sem ponto flutuante: Σx, Σx² e Σv·i por janela de ciclos inteiros da fase A e quadro de resumo `0x02`. Testado no PC com gcc em `tests/test_meter_firmware.py`. |
 | `codewarrior/EM256 Demo/cmd/prisma_flash_and_run.cmd` | Comandos HI-WAVE para carregar, verificar e executar a imagem. |
 
 ## Compilar e testar no computador
@@ -36,7 +37,7 @@ O projeto foi validado com CodeWarrior for Microcontrollers 6.3.2, suporte ColdF
 
 A SCI3 usa PTC1/TX3 no J6 ligado ao RXD do CH340 e GND comum, sem ligar VCC. O perfil do aplicativo é `examples/profiles/demoem-ch340.json`. A leitura validada fixa um módulo por sinal: ADC3/AD4, ADC1/AD5 e ADC2/AD6. Ela publica `ad4_raw`, `ad5_raw` e `ad6_raw`; são contagens não calibradas. Alternar imediatamente entradas simples e diferenciais produziu resíduos do multiplexador e não é usado nesta revisão.
 
-Para compilar, abra `EM256 Demo.mcp` e execute **Make**. Para gravar, abra a configuração PEmicro incluída no projeto, carregue `bin/Project.abs`, confirme **Connect/OK**, aguarde programar/verificar e use **Run/Go**. Depois da gravação, o cabo PEmicro pode ser removido; permanecem a alimentação da placa e o CH340.
+Para compilar, abra `EM256 Demo.mcp` e execute **Make** (ou `CmdIDE.exe "EM256 Demo.mcp" /s /f n /b /q`). A rotina do MTIM1 usa `interrupt VectorNumber_Vmtim1`, a sintaxe do *HCS08 porting support* ligado no projeto; `__declspec(interrupt)` com o vetor em `exceptions.c` derruba o IDE 6.3. Pelo mesmo motivo, `prisma_meter.h` não inclui outros headers: o `.c` inclui `prisma_frame_stream.h` antes. Imagem atual: ~4 KB de código e ~3,3 KB de RAM. Para gravar, abra a configuração PEmicro incluída no projeto, carregue `bin/Project.abs`, confirme **Connect/OK**, aguarde programar/verificar e use **Run/Go**. Depois da gravação, o cabo PEmicro pode ser removido; permanecem a alimentação da placa e o CH340.
 
 O timestamp usa milissegundos em uint32; uma sessão precisa ser reiniciada após reset do dispositivo ou antes do rollover. Cada amostra deve representar canais sincronizados. `currents_present=0` omite os canais de corrente, sem inventar leituras.
 
