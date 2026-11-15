@@ -28,6 +28,15 @@ Carregue um JSON em **Dados e dispositivos → Carregar calibração…**. O for
 valor_corrigido = valor_recebido × gain + offset
 ```
 
+### Calibração da DEMOEM em duas etapas
+
+Em **Análise → Fonte e calibração** (ou no menu **Dados e dispositivos**):
+
+1. **ADC com tensão DC** (só a placa, sem rede elétrica). Abra o J38 para desligar o gerador QE8. Ligue um potenciômetro de 10 kΩ entre o 3,3 V e o GND da própria DEMOEM e leve o cursor, por 1 kΩ, aos pinos do J38 do lado do microcontrolador (pode ligar AD4, AD5 e AD6 juntos). Para cada ponto, meça a tensão no pino com o multímetro, digite e clique em **Registrar ponto**. O assistente mostra a contagem média e o ruído da última rajada, aceita um ponto por rajada nova e recusa canais saturados (0 ou 65535). Use 3 pontos ou mais (ex.: 0,3 V, 1,6 V e 3,0 V). O resultado é a reta `volts = contagem × gain + offset` por canal, com o maior desvio dos pontos (verde abaixo de 5 mV). O perfil salvo leva `"pin_volts": true` e o app continua mostrando "Tensão no pino ADC".
+2. **Sensores com multímetro** (com transformador/divisor isolado e TCs ligados). Com carga estável, informe a tensão RMS de cada fase e, se houver canais de corrente, a corrente medida com alicate. O ganho de cada canal é multiplicado por `medido / exibido`, assim como o offset, e o perfil deixa de ser "volts no pino".
+
+A **calibração de fase com carga resistiva** vem depois da etapa 2 e preserva a etapa em que o perfil está. A calibração ativa é guardada nas configurações do app e volta na próxima abertura; **Restaurar calibração identidade** a remove.
+
 Os coeficientes são aplicados uma única vez na entrada, antes do buffer, cálculos e gravação. Ganhos devem ser positivos; os coeficientes devem ser finitos. Trocar a calibração encerra o registro e limpa o buffer, evitando misturar escalas. Nome e coeficientes são registrados na origem do CSV, nos metadados SQLite e no relatório. O aplicativo não ajusta os coeficientes sozinho: obtê-los com referência e método documentados na bancada.
 
 ## Histórico e relatório

@@ -1,5 +1,5 @@
 """Perfis explícitos de calibração: ganho, offset e atraso (fase) por canal."""
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 import json
 import math
 from pathlib import Path
@@ -12,9 +12,12 @@ CHANNELS = ("va", "vb", "vc", "ia", "ib", "ic")
 
 
 class Calibration:
-    def __init__(self, channels: dict | None = None, name: str = "Identidade") -> None:
+    def __init__(self, channels: dict | None = None, name: str = "Identidade", pin_volts: bool = False) -> None:
         self.name = name
         self.channels = channels or {}
+        # True: os coeficientes só levam contagens a volts no pino do ADC (falta a
+        # escala dos sensores); False: o resultado já é a grandeza real (V, A).
+        self.pin_volts = bool(pin_volts)
         if set(self.channels) - set(CHANNELS):
             raise ValueError("Canal de calibração desconhecido")
         for settings in self.channels.values():
@@ -31,12 +34,17 @@ class Calibration:
 
     @classmethod
     def load(cls, path: Path) -> "Calibration":
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        return cls.from_dict(json.loads(path.read_text(encoding="utf-8")))
+
+    @classmethod
+    def from_dict(cls, payload) -> "Calibration":
         if not isinstance(payload, dict) or payload.get("version") != 1:
             raise ValueError("Perfil de calibração requer version=1")
         if not isinstance(payload.get("name"), str) or not isinstance(payload.get("channels"), dict):
             raise ValueError("Perfil requer name e channels")
-        return cls(payload["channels"], payload["name"])
+        if not isinstance(payload.get("pin_volts", False), bool):
+            raise ValueError("pin_volts deve ser true ou false")
+        return cls(payload["channels"], payload["name"], payload.get("pin_volts", False))
 
     def apply(self, sample: Sample) -> Sample:
         fields = asdict(sample)
@@ -70,10 +78,46 @@ class Calibration:
         return values, currents
 
     def to_dict(self) -> dict:
-        return {"version": 1, "name": self.name, "channels": self.channels}
+        payload = {"version": 1, "name": self.name, "channels": self.channels}
+        if self.pin_volts:
+            payload["pin_volts"] = True
+        return payload
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+@dataclass(frozen=True)
+class AdcFit:
+    """Reta contagem → volts no pino de um canal do ADC."""
+    gain: float          # V por contagem
+    offset: float        # V em contagem zero
+    max_error_v: float   # maior desvio dos pontos em relação à reta
+    points: int
+
+
+ADC_MIN_SPAN_COUNTS = 2000  # pontos mais próximos que isso não definem a inclinação
+
+
+def fit_adc(points: list[tuple[float, float]]) -> AdcFit:
+    """Mínimos quadrados de ``volts = contagem × gain + offset``.
+
+    ``points`` são pares (contagem média, tensão medida no pino). Dois pontos
+    bastam para a reta; com três ou mais, ``max_error_v`` mostra a não linearidade.
+    """
+    if len(points) < 2:
+        raise ValueError("Registre ao menos 2 pontos (recomendado 3: perto de 0 V, do meio e do topo)")
+    counts = np.array([p[0] for p in points], dtype=float)
+    volts = np.array([p[1] for p in points], dtype=float)
+    if not (np.all(np.isfinite(counts)) and np.all(np.isfinite(volts))):
+        raise ValueError("Pontos de calibração inválidos")
+    if np.ptp(counts) < ADC_MIN_SPAN_COUNTS:
+        raise ValueError("Pontos muito próximos: espalhe pela faixa (ex.: 0,3 V, 1,6 V e 3,0 V)")
+    gain, offset = np.polyfit(counts, volts, 1)
+    if gain <= 0:
+        raise ValueError("A tensão medida deve subir junto com a contagem; confira canal e ligações")
+    error = float(np.max(np.abs(volts - (counts * gain + offset))))
+    return AdcFit(float(gain), float(offset), error, len(points))
 
 
 def gains_from_reference(base_gain: dict[str, float], shown_rms: dict[str, float],

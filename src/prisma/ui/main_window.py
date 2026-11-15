@@ -620,8 +620,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         return times
 
     def _pin_volts(self) -> bool:
-        """Rajada sem calibração: valores convertidos para tensão no pino do ADC."""
-        return self.raw_counts and not self.calibration.channels
+        """Rajada exibida como tensão no pino do ADC: escala nominal ou só a etapa 1 da calibração."""
+        return self.raw_counts and (not self.calibration.channels or self.calibration.pin_volts)
 
     def _apply_units(self) -> None:
         label = "Tensão no pino ADC" if self._pin_volts() else "Tensão"
@@ -642,13 +642,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
             # é estável, então a fase A vira a referência (0°).
             if self.phasor_reference.currentIndex() == 0:
                 self.phasor_reference.setCurrentIndex(1)
-            self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
-                      f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
+            if not self.calibration.channels:
+                self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Sem calibração, os valores "
+                          f"são a tensão no pino do ADC (contagem × {ADC_VREF_V} V / {ADC_FULL_SCALE}).")
+            else:
+                self._log(f"Rajada recebida: frequência em Automática (40–70 Hz). Calibração ativa: "
+                          f"{self.calibration.name}.")
         self._show_block(block, ADC_VREF_V, ADC_FULL_SCALE)
         last = self.buffer.arrays(duration_s=0.0)[0]
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
-        scale = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else None
+        # Sem calibração, escala nominal; com calibração, os coeficientes partem das contagens.
+        scale = ADC_VREF_V / ADC_FULL_SCALE if not self.calibration.channels else None
         starts = self._block_record_times(block)
         for sample, record_t in zip(block.samples, starts):
             if scale is not None:
@@ -658,7 +663,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self._on_sample(sample, record_t)
         names = "/".join(block.channels)
         warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
-        unit = f"tensão no pino ADC (Vref {ADC_VREF_V} V)" if scale else "calibração ativa"
+        unit = (f"tensão no pino ADC (nominal, Vref {ADC_VREF_V} V)" if scale
+                else "tensão no pino ADC (ADC calibrado)" if self.calibration.pin_volts else "calibração ativa")
         self.statusBar().showMessage(
             f"Rajada {block.seq}: {len(block.samples)} amostras de {names} a {block.fs_hz:.1f} Hz · {unit}{warning}")
 

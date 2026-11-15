@@ -15,6 +15,7 @@
 - README e banner atualizados com a identidade nova e o painel touch.
 - Correção: energia, demanda e tendências passam a usar o relógio do computador e só somam quando chega amostra nova. Em rajada (t = seq × 10 s) cada bloco contava 10 s em vez de ~0,55 s, inflando energia e demanda em ~18×.
 - Voz (perguntas, microfone e fala) retirada do painel por enquanto; `prisma.core.query`/`speech` e `ui/microphone.py` continuam no código para retomar depois.
+- Calibração em duas etapas para a DEMOEM. **1 · ADC com tensão DC**: assistente que mostra a contagem média ao vivo, registra um ponto por rajada (tensão do multímetro × contagem), recusa saturação e ajusta a reta contagem → volts no pino com o maior desvio de cada canal; o perfil ganha `pin_volts: true`. **2 · Sensores com multímetro**: agora também para correntes (Ia/Ib/Ic) e escala o offset junto com o ganho. A calibração ativa é lembrada na próxima abertura.
 - **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
 
 ## 0.2.0

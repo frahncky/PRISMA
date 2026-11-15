@@ -11,16 +11,18 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QFrame, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMenu, QMessageBox, QPlainTextEdit, QProgressBar, QPushButton,
+    QScrollArea,
     QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
-from prisma.core.calibration import Calibration, delays_from_resistive_load, gains_from_reference
+from prisma.core.calibration import Calibration, delays_from_resistive_load, fit_adc, gains_from_reference
 import numpy as np
 import pyqtgraph as pg
 
 from prisma.ui import theme
 
 TREND_POINTS = 3600  # 30 min a 2 pontos/s
+CAL_CHANNELS = ("va", "vb", "vc", "ia", "ib", "ic")
 from prisma.core.devices import DeviceProfile, load_protocol, serial_inventory
 from prisma.core.history import export_session, list_sessions
 from prisma.core.reports import write_report
@@ -31,6 +33,9 @@ from prisma.core.toolchain import CommandRunner, DebugSession, Project, artifact
 class FeaturesMixin:
     def _build_features(self) -> None:
         self.calibration = Calibration()
+        self.block_count = 0        # rajadas recebidas (o assistente do ADC espera uma nova por ponto)
+        self.block_names = ("ad4", "ad5", "ad6")
+        self.last_block_stats = {}  # canal → (média, desvio, saturado) da última rajada bruta
         self.settings = QSettings("PRISMA", "PRISMA")
         self.device_profile = DeviceProfile("DEMOEM / PRISMA JSON")
         self.sample_parser = load_protocol(self.device_profile.protocol)
@@ -53,6 +58,7 @@ class FeaturesMixin:
             ("Exportar relatório HTML…", self.export_report),
             ("Salvar diagnóstico serial/USB…", self.save_inventory),
             ("Carregar perfil de dispositivo…", self.load_device),
+            ("Calibrar ADC com tensão DC…", self.calibrate_adc),
             ("Calibrar com multímetro…", self.calibrate_from_reference),
             ("Calibrar fase com carga resistiva…", self.calibrate_phase),
             ("Carregar calibração…", self.load_calibration),
@@ -64,8 +70,8 @@ class FeaturesMixin:
 
         analysis = QWidget()
         page = QVBoxLayout(analysis)
-        page.setContentsMargins(20, 16, 20, 16)
-        page.setSpacing(14)
+        page.setContentsMargins(20, 12, 20, 12)
+        page.setSpacing(10)
         self.frequency_combo = QComboBox()
         self.frequency_combo.addItems(["60 Hz", "50 Hz", "Automática (40–70 Hz)"])
         self.window_combo = QComboBox()
@@ -86,18 +92,18 @@ class FeaturesMixin:
             frame = QFrame()
             frame.setObjectName("card")
             outer = QVBoxLayout(frame)
-            outer.setContentsMargins(18, 14, 18, 16)
-            outer.setSpacing(10)
+            outer.setContentsMargins(18, 10, 18, 12)
+            outer.setSpacing(8)
             outer.addWidget(self._section(title))
             form = QFormLayout()
-            form.setVerticalSpacing(10)
+            form.setVerticalSpacing(6)
             form.setHorizontalSpacing(24)
             form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
             outer.addLayout(form)
             return frame, form
 
         cards = QHBoxLayout()
-        cards.setSpacing(14)
+        cards.setSpacing(10)
         settings, form = card("PARÂMETROS DA ANÁLISE")
         form.addRow(self._muted("Frequência fundamental"), self.frequency_combo)
         form.addRow(self._muted("Janela do ajuste harmônico"), self.window_combo)
@@ -106,10 +112,18 @@ class FeaturesMixin:
         status, form = card("FONTE E CALIBRAÇÃO")
         form.addRow(self._muted("Dispositivo"), self.profile_label)
         form.addRow(self._muted("Calibração"), self.calibration_label)
-        calibrate = QPushButton("Calibrar com multímetro…")
-        calibrate.setToolTip("Informe a tensão RMS medida em cada fase; o PRISMA calcula o ganho dos canais.")
+        calibrate_adc = QPushButton("1 · ADC com tensão DC…")
+        calibrate_adc.setToolTip("Só a DEMOEM: tensões DC conhecidas (0–3,3 V) no pino levam contagens a volts.")
+        calibrate_adc.clicked.connect(self.calibrate_adc)
+        calibrate = QPushButton("2 · Sensores com multímetro…")
+        calibrate.setToolTip("Com os sensores ligados: informe tensões e correntes RMS medidas; "
+                             "o PRISMA calcula o ganho de cada canal.")
         calibrate.clicked.connect(self.calibrate_from_reference)
-        form.addRow("", calibrate)
+        steps = QHBoxLayout()
+        steps.setSpacing(8)
+        steps.addWidget(calibrate_adc)
+        steps.addWidget(calibrate)
+        form.addRow(self._muted("Calibrar"), steps)
         form.addRow(self._muted("Fasor selecionado"), self.selected_phasor)
         cards.addWidget(status, stretch=1)
         page.addLayout(cards)
@@ -117,27 +131,32 @@ class FeaturesMixin:
         power_card = QFrame()
         power_card.setObjectName("card")
         power_layout = QVBoxLayout(power_card)
-        power_layout.setContentsMargins(18, 14, 18, 16)
+        power_layout.setContentsMargins(18, 10, 18, 12)
+        power_layout.setSpacing(6)
         power_layout.addWidget(self._section("POTÊNCIAS POR FASE"))
         self.power_view = QTableWidget(3, 6)
         self.power_view.setHorizontalHeaderLabels(["Fase", "I RMS (A)", "P (W)", "Q1 (var)", "S (VA)", "FP"])
         self.power_view.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.power_view.verticalHeader().setVisible(False)
         self.power_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.power_view.setFixedHeight(150)
         self.power_view.setShowGrid(False)
+        rows = self.power_view.verticalHeader()
+        rows.setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        rows.setMinimumSectionSize(24)
+        rows.setDefaultSectionSize(26)
+        self.power_view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.power_view.setFixedHeight(36 + 3 * 26 + 4)  # cabeçalho + 3 fases, sem rolagem
         power_layout.addWidget(self.power_view)
-        note = self._muted("Potências exigem ia, ib e ic sincronizadas com va, vb e vc. Q1 é a potência reativa "
-                           "da fundamental; RMS, P e S usam os sinais AC. Uma calibração carregada não certifica "
-                           "a cadeia de medição.")
-        note.setWordWrap(True)
+        note = self._muted("Requer ia, ib e ic sincronizadas com va, vb e vc · Q1 = reativa da fundamental · "
+                           "RMS, P e S usam os sinais AC.")
+        note.setToolTip("Uma calibração carregada não certifica a cadeia de medição.")
         power_layout.addWidget(note)
         page.addWidget(power_card)
 
         trend_card = QFrame()
         trend_card.setObjectName("card")
         trend_layout = QVBoxLayout(trend_card)
-        trend_layout.setContentsMargins(18, 14, 18, 16)
+        trend_layout.setContentsMargins(18, 10, 18, 12)
         trend_head = QHBoxLayout()
         trend_head.addWidget(self._section("TENDÊNCIA DA SESSÃO"))
         trend_head.addStretch(1)
@@ -156,13 +175,13 @@ class FeaturesMixin:
         self.trend_freq_curve = self.trend_freq.plot(pen=pg.mkPen(theme.ACCENT, width=2))
         self.trend_unb_curve = self.trend_freq.plot(pen=pg.mkPen(theme.WARNING, width=2, style=Qt.PenStyle.DashLine))
         for plot in (self.trend_rms, self.trend_freq):
-            plot.setMinimumHeight(190)
+            plot.setMinimumHeight(135)
             trend_plots.addWidget(plot)
         trend_layout.addLayout(trend_plots)
-        page.addWidget(trend_card)
+        page.addWidget(trend_card, stretch=1)
         self.trend = deque(maxlen=TREND_POINTS)
         self._trend_t0 = None
-        page.addStretch(1)
+        analysis = self._scrollable(analysis)
         self.tabs.addTab(analysis, "Análise")
 
         hardware = QWidget()
@@ -232,6 +251,7 @@ class FeaturesMixin:
         json_layout.addWidget(self.hardware_view)
         lower.addWidget(json_card, stretch=1)
         hw_layout.addLayout(lower, stretch=2)
+        hardware = self._scrollable(hardware)
         self.tabs.addTab(hardware, "Hardware / ADC")
 
         development = QWidget()
@@ -296,6 +316,16 @@ class FeaturesMixin:
         self.btn_flash.clicked.connect(self.flash_project)
 
     @staticmethod
+    def _scrollable(widget: QWidget) -> QScrollArea:
+        """Página que rola na vertical quando a tela é baixa demais, em vez de cortar o conteúdo."""
+        scroll = QScrollArea()
+        scroll.setWidget(widget)
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        return scroll
+
+    @staticmethod
     def _muted(text: str) -> QLabel:
         label = QLabel(text)
         label.setObjectName("muted")
@@ -330,11 +360,68 @@ class FeaturesMixin:
         self.settings.setValue("last_profile", str(path.resolve()))
         self._log(f"Perfil carregado: {profile.name} · {profile.baudrate} baud · protocolo {profile.protocol}")
 
-    def _calibration_base_gains(self) -> dict[str, float]:
-        """Ganho que leva a entrada do canal ao valor exibido hoje."""
+    def _default_gain(self) -> float:
+        """Ganho implícito de um canal sem coeficiente: escala nominal só em rajada sem calibração."""
         from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
-        default = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else 1.0
-        return {ch: self.calibration.channels.get(ch, {}).get("gain", default) for ch in ("va", "vb", "vc")}
+        return ADC_VREF_V / ADC_FULL_SCALE if self.raw_counts and not self.calibration.channels else 1.0
+
+    def _calibration_base(self) -> dict[str, dict]:
+        """Coeficientes que levam a entrada de cada canal ao valor exibido hoje."""
+        default = {"gain": self._default_gain(), "offset": 0.0}
+        return {ch: dict(self.calibration.channels.get(ch, default)) for ch in CAL_CHANNELS}
+
+    def calibrate_adc(self, points: dict[str, list[tuple[float, float]]] | None = None,
+                      filename: str | None = None) -> None:
+        """Etapa 1: reta contagem → volts no pino, com tensões DC medidas no multímetro.
+
+        ``points``/``filename`` permitem executar sem diálogos (testes).
+        """
+        if points is None:
+            if not self.raw_counts:
+                QMessageBox.information(self, "Calibrar ADC",
+                                        "Conecte a DEMOEM: a calibração do ADC usa as rajadas brutas da placa.")
+                return
+            from prisma.ui.adc_calibration import AdcCalibrationDialog
+            dialog = AdcCalibrationDialog(self, lambda: (self.block_count, self.last_block_stats), self.block_names)
+            if dialog.exec() != QDialog.DialogCode.Accepted:
+                return
+            points = dialog.points
+        from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
+        fits = {}
+        for channel, pairs in points.items():
+            if not pairs:
+                continue
+            try:
+                fits[channel] = fit_adc(pairs)
+            except ValueError as exc:
+                QMessageBox.warning(self, "Calibrar ADC", f"{channel.upper()}: {exc}")
+                return
+        if not fits:
+            QMessageBox.warning(self, "Calibrar ADC", "Nenhum canal com pontos registrados.")
+            return
+        # Canais sem pontos ficam na escala nominal, para todos saírem em volts no pino.
+        channels = {ch: {"gain": ADC_VREF_V / ADC_FULL_SCALE, "offset": 0.0} for ch in ("va", "vb", "vc")}
+        for channel, fit in fits.items():
+            channels[channel] = {"gain": fit.gain, "offset": fit.offset}
+        for channel, cfg in self.calibration.channels.items():
+            if "delay_us" in cfg and channel in channels:
+                channels[channel]["delay_us"] = cfg["delay_us"]
+        calibration = Calibration(channels, f"ADC {datetime.now():%Y-%m-%d %H:%M}", pin_volts=True)
+        self._save_calibration(calibration, filename, "calibracao-adc-demoem.json")
+        self._set_calibration(calibration)
+        self._log("ADC calibrado: " + "; ".join(
+            f"{ch} = {fit.gain * 1e6:.3f} µV/contagem, offset {fit.offset * 1000:+.1f} mV, "
+            f"maior desvio {fit.max_error_v * 1000:.1f} mV ({fit.points} pontos)" for ch, fit in fits.items()))
+
+    def _save_calibration(self, calibration: Calibration, filename: str | None, suggestion: str) -> None:
+        if filename is None:
+            filename, _ = QFileDialog.getSaveFileName(self, "Salvar calibração", suggestion, "JSON (*.json)")
+        if filename:
+            try:
+                calibration.save(Path(filename))
+                self._log(f"Calibração salva: {filename}")
+            except OSError as exc:
+                QMessageBox.critical(self, "Calibração", str(exc))
 
     def calibrate_from_reference(self, measured: dict[str, float] | None = None,
                                  filename: str | None = None) -> None:
@@ -343,24 +430,29 @@ class FeaturesMixin:
             return
         result = self.last_analysis[0]
         shown = {"va": result.rms["A"], "vb": result.rms["B"], "vc": result.rms["C"]}
+        shown.update({ch: result.current_rms[phase] for ch, phase in zip(("ia", "ib", "ic"), "ABC")
+                      if phase in result.current_rms})
         if measured is None:
             dialog = QDialog(self)
             dialog.setWindowTitle("Calibrar com multímetro")
             layout = QVBoxLayout(dialog)
-            intro = QLabel("Meça a tensão RMS de cada fase com um instrumento de referência e informe abaixo. "
-                           "Deixe 0 para não alterar um canal. Mantenha o sinal estável durante a medição.")
+            intro = QLabel("Com os sensores ligados, meça a tensão RMS de cada fase (e a corrente, com alicate "
+                           "amperímetro) num instrumento de referência e informe abaixo. Deixe 0 para não alterar "
+                           "um canal. Mantenha a carga estável durante a medição.")
             intro.setWordWrap(True)
             layout.addWidget(intro)
             form = QFormLayout()
             spins = {}
-            for channel, phase in (("va", "A"), ("vb", "B"), ("vc", "C")):
+            rows = [(ch, f"V{ph.lower()}", "V") for ch, ph in zip(("va", "vb", "vc"), "ABC")]
+            rows += [(ch, f"I{ph.lower()}", "A") for ch, ph in zip(("ia", "ib", "ic"), "ABC") if ch in shown]
+            for channel, name, unit in rows:
                 spin = QDoubleSpinBox()
                 spin.setRange(0, 100000)
                 spin.setDecimals(3)
-                spin.setSuffix(" V")
+                spin.setSuffix(f" {unit}")
                 spin.setFixedWidth(160)
                 spins[channel] = spin
-                form.addRow(self._muted(f"Fase {phase} · exibido {shown[channel]:.3f} V · medido"), spin)
+                form.addRow(self._muted(f"{name} · exibido {shown[channel]:.3f} {unit} · medido"), spin)
             layout.addLayout(form)
             buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
             buttons.button(QDialogButtonBox.StandardButton.Ok).setText("Calibrar")
@@ -370,27 +462,22 @@ class FeaturesMixin:
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return
             measured = {channel: spin.value() for channel, spin in spins.items()}
+        base = self._calibration_base()
         try:
-            gains = gains_from_reference(self._calibration_base_gains(), shown, measured)
+            gains = gains_from_reference({ch: cfg["gain"] for ch, cfg in base.items()}, shown, measured)
         except ValueError as exc:
             QMessageBox.warning(self, "Calibração", str(exc))
             return
         channels = {ch: dict(cfg) for ch, cfg in self.calibration.channels.items()}
-        base = self._calibration_base_gains()
-        for channel in ("va", "vb", "vc"):
-            channels.setdefault(channel, {"gain": base[channel], "offset": 0.0})
+        for channel in ("va", "vb", "vc", *(ch for ch in ("ia", "ib", "ic") if ch in shown)):
+            channels.setdefault(channel, base[channel])
         for channel, gain in gains.items():
+            # valor = entrada × ganho + offset: multiplicar o valor por k multiplica os dois
+            ratio = gain / channels[channel]["gain"]
             channels[channel]["gain"] = gain
-        name = f"Bancada {datetime.now():%Y-%m-%d %H:%M}"
-        calibration = Calibration(channels, name)
-        if filename is None:
-            filename, _ = QFileDialog.getSaveFileName(self, "Salvar calibração", "calibracao-demoem.json", "JSON (*.json)")
-        if filename:
-            try:
-                calibration.save(Path(filename))
-                self._log(f"Calibração salva: {filename}")
-            except OSError as exc:
-                QMessageBox.critical(self, "Calibração", str(exc))
+            channels[channel]["offset"] = channels[channel]["offset"] * ratio
+        calibration = Calibration(channels, f"Bancada {datetime.now():%Y-%m-%d %H:%M}")
+        self._save_calibration(calibration, filename, "calibracao-demoem.json")
         self._set_calibration(calibration)
         self._log("Ganhos calibrados: " + ", ".join(f"{ch} = {g:.6g}" for ch, g in gains.items()))
 
@@ -449,20 +536,12 @@ class FeaturesMixin:
             confirm = dialog.exec() == QDialog.DialogCode.Accepted
         if not confirm:
             return
-        from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
-        default_gain = ADC_VREF_V / ADC_FULL_SCALE if self._pin_volts() else 1.0
+        base = self._calibration_base()
         channels = {ch: dict(cfg) for ch, cfg in self.calibration.channels.items()}
         for channel, delay in delays.items():
-            channels.setdefault(channel, {"gain": default_gain, "offset": 0.0})["delay_us"] = round(delay, 2)
-        calibration = Calibration(channels, f"Fase {datetime.now():%Y-%m-%d %H:%M}")
-        if filename is None:
-            filename, _ = QFileDialog.getSaveFileName(self, "Salvar calibração", "calibracao-fase.json", "JSON (*.json)")
-        if filename:
-            try:
-                calibration.save(Path(filename))
-                self._log(f"Calibração salva: {filename}")
-            except OSError as exc:
-                QMessageBox.critical(self, "Calibração", str(exc))
+            channels.setdefault(channel, base[channel])["delay_us"] = round(delay, 2)
+        calibration = Calibration(channels, f"Fase {datetime.now():%Y-%m-%d %H:%M}", self.calibration.pin_volts)
+        self._save_calibration(calibration, filename, "calibracao-fase.json")
         self._set_calibration(calibration)
         self._log("Atrasos calibrados: " + ", ".join(f"{ch} = {d:+.1f} µs" for ch, d in delays.items()))
 
@@ -485,9 +564,15 @@ class FeaturesMixin:
         self.buffer.clear()
         self._invalidate_analysis()
         self.calibration = calibration
-        self.calibration_label.setText(calibration.name)
+        stage = " · volts no pino" if calibration.pin_volts else ""
+        self.calibration_label.setText(calibration.name + stage)
         self._apply_units()
-        self._log(f"Calibração ativa: {calibration.name}; buffer reiniciado.")
+        # A calibração ativa volta na próxima abertura do app.
+        if calibration.channels:
+            self.settings.setValue("calibration", json.dumps(calibration.to_dict(), ensure_ascii=False))
+        else:
+            self.settings.remove("calibration")
+        self._log(f"Calibração ativa: {calibration.name}{stage}; buffer reiniciado.")
 
     def _invalidate_analysis(self) -> None:
         self.last_analysis = None
@@ -516,6 +601,11 @@ class FeaturesMixin:
         """Mostra a rajada bruta (antes de calibração) na página Hardware / ADC."""
         t = [s.t - block.samples[0].t for s in block.samples]
         columns = list(zip(*((s.va, s.vb, s.vc) for s in block.samples)))
+        self.block_count += 1
+        self.block_names = tuple(block.channels)
+        self.last_block_stats = {
+            ch: (float(np.mean(values)), float(np.std(values)), bool(min(values) <= 0 or max(values) >= full_scale))
+            for ch, values in zip(("va", "vb", "vc"), columns)}
         for curve, values in zip(self.raw_curves, columns):
             curve.setData(t, values)
         self.burst_table.setRowCount(len(block.channels))

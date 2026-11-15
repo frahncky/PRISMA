@@ -7,11 +7,13 @@ Exemplos:
     python -m prisma --painel            # painel touch em tela cheia
 """
 import argparse
+import json
 import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
+from prisma.core.calibration import Calibration
 from prisma.ui.main_window import MainWindow, app_icon
 
 
@@ -45,6 +47,12 @@ def main(argv: list[str] | None = None) -> None:
             window.apply_profile(profile)
         except (OSError, ValueError, TypeError, ImportError) as exc:
             window._log(f"Perfil não carregado ({profile}): {exc}")
+    saved = settings.value("calibration")
+    if saved:
+        try:
+            window._set_calibration(Calibration.from_dict(json.loads(saved)))
+        except (ValueError, TypeError) as exc:
+            window._log(f"Calibração salva ignorada: {exc}")
     port = args.port or settings.value("last_port")
     if port and not window.select_port(port):
         window._log(f"Porta {port} não encontrada.")

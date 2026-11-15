@@ -115,7 +115,7 @@ Para analisar h15 de 60 Hz, a amostragem deve superar 1800 amostras/s. A taxa de
 
 - [x] Identificação de drivers, toolchain e probe documentada.
 - [x] SCI validada com mensagens JSON completas a 19200 8N1.
-- [ ] ADC comparado com referência conhecida em pelo menos três pontos por canal.
+- [ ] ADC comparado com referência conhecida em pelo menos três pontos por canal (assistente **1 · ADC com tensão DC**, ver [instrumentação](instrumentacao.md#calibração-da-demoem-em-duas-etapas)).
 - [ ] Frequência de 50/60 Hz e amplitudes comparadas com instrumento de referência.
 - [x] Conversão dos ADC1/2/3 concluída sem timeout e variação bruta observada em DADP0/DADP2.
 - [ ] LEDs/GPIO/LCD e escala física do ADC comparados com referência; a tela apenas reproduz a telemetria recebida.
