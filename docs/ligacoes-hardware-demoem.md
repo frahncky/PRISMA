@@ -62,9 +62,8 @@ Esse desenho é **funcional**, não substitui o esquema elétrico. Toda ligaçã
 ### 4.1 O que a placa fornece
 
 - O MCF51EM256 possui ADCs destinados à metrologia. No manual DEMOEM, **J29** dá acesso a `DADM0`, `DADM1` e `DADM2`: **na configuração de fábrica esses terminais negativos ficam conectados a GND por jumpers**.
-- O manual identifica os correspondentes `DADP0`, `DADP1` e `DADP2` acessíveis pela área do conector **J38** (compartilhada com circuitos de demonstração).
-- O **MC9S08QE8** gera sinais de teste de 50/60 Hz com PWM/filtragem; **J38** pode ligar as seis saídas PWM aos ADCs. Isso **não é medição de tensão/corrente da rede**.
-- A existência de um nome de canal não garante que ele esteja livre, configurado, isolado, referenciado ou disponível para seis grandezas simultâneas. A topologia final depende do esquema e dos ADCs efetivos.
+- O esquema confirma que **J38** traz as seis entradas usadas pelo firmware (`AD4`, `AD5`, `AD6`, `DADP0`, `DADP1`, `DADP2`), cada uma ligada por um jumper a uma saída PWM filtrada do **MC9S08QE8**. Esse gerador de teste de 50/60 Hz **não é medição de tensão/corrente da rede**. Pinagem completa na [seção 4.4](#44-pinagem-das-entradas-analógicas-esquema-rev-c).
+- O firmware PRISMA (`PRISMA_CHANNELS 6`) converte as tensões em `AD4/AD5/AD6` (entrada simples) e as correntes em `DADP0/1/2` (diferencial, com `DADMx` no GND pelo J29), seis canais sincronizados por tique do timer (ver [protocolo](protocolo.md)).
 
 ### 4.2 Caminho correto dos dados reais
 
@@ -85,10 +84,72 @@ Esse desenho é **funcional**, não substitui o esquema elétrico. Toda ligaçã
 
 1. Identificar e fotografar a posição atual de **J38** e **J29**; guardar os jumpers retirados.
 2. Desabilitar a ligação do **PWM de demonstração** ao canal em que será conectado um sinal real, seguindo o esquema da revisão.
-3. Definir se a entrada será **diferencial** ou referenciada ao GND. Para operação diferencial, a ponte de aterramento em `J29` **não** pode ser presumida correta: revisar ambos os terminais e o common-mode permitido.
+3. Definir se a entrada será **diferencial** ou referenciada ao GND. Com módulos de saída polarizada em VCC/2 (seção 4.5), `J29` fica como veio de fábrica (`DADMx` no GND): a corrente nunca vai abaixo do GND. Uma saída **centrada em 0 V** no `DADPx` com `DADMx` no GND teria o semiciclo negativo cortado, porque nenhum pino do ADC pode ficar abaixo de VSSA.
 4. Instalar o condicionamento **fora da placa**, isolado e previamente testado, e conectar somente a saída analógica condicionada.
 5. Registrar em tabela: sensor, relação, borne do sensor, circuito condicionador, conector/pino DEMOEM, polaridade, GND/referência, ganho, fase, frequência de amostragem e ensaios.
 6. Só marcar dados como **reais** após leitura calibrada e validação; sinal PWM da QE8 ou simulador do PRISMA deve continuar identificado como **demonstração**.
+
+### 4.4 Pinagem das entradas analógicas (esquema rev C)
+
+Fonte: esquema oficial da DEMOEM (NXP `DEMOEMSC.pdf`, "DEMOEM Schematic", P&E, rev C, 10 folhas; ver seção 10). O manual do usuário v1.02 só traz os nomes dos jumpers (tabela "Default Jumper Settings": J29 "ALL ON — DADMx to GND", J36 "1&2 — QE8 Vdd", J38 "ALL ON — QE8 PWM to ADC") e as figuras 7-19 e 7-26, sem os sinais do lado do ADC.
+
+**J38 — "PWM to ADC" (6×2, 2,54 mm).** Um lado de cada par vai para as entradas do MCF51EM256; o outro, para as saídas PWM do QE8, que passam por filtro RC (redes de 2,2 kΩ e capacitores de 0,1 µF, C21–C26) do lado do QE8. Sem o jumper, o filtro e o QE8 saem do canal.
+
+| Linha | Entrada do ADC | Saída do QE8 (fig. 7-26) | Uso no firmware PRISMA |
+| --- | --- | --- | --- |
+| 1 | `AD4` | TPM1CH0 | Tensão da fase A (`va`) |
+| 2 | `AD5` | TPM1CH1 | Tensão da fase B (`vb`) |
+| 3 | `AD6` | TPM1CH2 | Tensão da fase C (`vc`) |
+| 4 | `DADP0` | TPM2CH0 | Corrente da fase A (`ia`) |
+| 5 | `DADP1` | TPM2CH1 | Corrente da fase B (`ib`) |
+| 6 | `DADP2` | TPM2CH2 | Corrente da fase C (`ic`) |
+
+> **A confirmar:** o pareamento linha a linha segue a ordem em que o esquema lista as redes (AD4…DADP2 e TPM1CH0…TPM2CH2), mas o desenho dos pares não é legível no PDF. Antes de ligar um sensor, com a placa desligada, meça continuidade do pino do J38 até o pino correspondente do J1 (tabela abaixo).
+
+**J29 — "DADMx to GND" (3×2).** Três jumpers ligam `DADM0`, `DADM1` e `DADM2` ao GND (fig. 7-19). Vêm todos colocados de fábrica.
+
+**J1 — MCU_PORT (2×25, fêmea 2,54 mm).** Traz os mesmos sinais, além de alimentação e referência:
+
+| Pino | Sinal | Pino | Sinal |
+| --- | --- | --- | --- |
+| 1 | VDD (3,3 V) | 3 | VSS (GND) |
+| 25 | `AD4` | 27 | `AD5` |
+| 22 | `AD6` | 24 | `AD7` (livre) |
+| 29 / 30 | `DADP0` / `DADM0` | 31 / 32 | `DADP1` / `DADM1` |
+| 33 / 34 | `DADP2` / `DADM2` | 35 / 36 | `DADP3` / `DADM3` (livres) |
+| 10 / 12 | VREFH / VREFL | 45 / 47 | VDDA / VSSA |
+| 49 | VREFO | 26 / 28 | PTC1 (TX3) / PTC0 (RX3) |
+
+**Faixa do ADC:** VREFH vem de VDDA, e VDDA de VDD por filtro de ruído, ambos ligados por resistores de 0 Ω na fábrica (manual, seção 2). A entrada útil fica entre 0 e ~3,3 V, e nenhum pino pode passar dessa faixa.
+
+### 4.5 Módulos de sensor sugeridos
+
+Não existe módulo dedicado à DEMOEM. Módulos comuns com saída **polarizada em VCC/2**, alimentados pelo 3,3 V do J1 (pinos 1 e 3), entram direto nas linhas do J38:
+
+| Grandeza | Módulo | Ligação | Observação |
+| --- | --- | --- | --- |
+| Tensão | **ZMPT101B** (transformador de tensão + amplificador, ganho por trimpot) | OUT → `AD4`/`AD5`/`AD6` | Bornes do primário na tensão da rede: só dentro de caixa fechada. Pequeno atraso de fase, compensado pelo `delay_us` da calibração |
+| Tensão (mais seguro) | Fonte AC-AC de tomada 9 V + divisor e polarização em VCC/2 | Saída → `AD4`/`AD5`/`AD6` | A parte de rede fica toda dentro do plugue fechado |
+| Corrente | **TC de alicate SCT-013** (5 A a 100 A) + placa de interface com resistor de carga e polarização em VCC/2 | OUT → `DADP0`/`DADP1`/`DADP2`, J29 colocado | Isolado; abraça o fio sem abrir o circuito |
+| Corrente baixa | **ZMCT103C** (TC até ~5 A + amplificador) | OUT → `DADP0`/`DADP1`/`DADP2`, J29 colocado | O fio da carga passa por dentro do módulo |
+
+Não use o ACS712: precisa de 5 V e a saída passa da faixa do ADC.
+
+Com a saída em VCC/2 no `DADPx` e o `DADMx` no GND, a diferência fica sempre positiva (≈ 0,15 a 3,15 V). O firmware atual lê sem mudança, e o RMS AC descarta o nível contínuo.
+
+| Experimento | Sensores | Jumpers do J38 a retirar |
+| --- | --- | --- |
+| Monofásico | `AD4` + `DADP0` | linhas 1 e 4 |
+| Bifásico | `AD4`, `AD5` + `DADP0`, `DADP1` | linhas 1, 2, 4 e 5 |
+| Trifásico | os seis | todas |
+
+Retire também os jumpers dos canais sem sensor, para o sinal do QE8 não aparecer como medição. Ou ignore esses canais no app.
+
+**Primeira ligação:**
+
+1. Alimente os módulos pelo J1 **sem o primário dos sensores na rede**. No osciloscópio do PRISMA, cada canal deve ficar parado em ~1,65 V (~32 000 contagens).
+2. Ligue um canal por vez. Ajuste o trimpot do ZMPT101B para a senoide não encostar em 0 nem em 3,3 V.
+3. Calibre pelo assistente do app (etapa 1: ADC com tensão DC; etapa 2: sensores com multímetro) e meça o atraso de fase com carga resistiva.
 
 ## 5. Comunicação serial — DEMOEM para PC ou ESP32-S3
 
@@ -185,12 +246,13 @@ Para uma versão portátil, construir ou adquirir **módulo de alimentação ext
 | **7 · IoT** | Wi-Fi + TLS + MQTT/HTTPS + buffer offline | Reconexão, controle de acesso, timestamps e perdas auditáveis |
 | **8 · Sistema completo** | Gabinete e ensaios com carga/referência adequada | Relatório de teste e documentação de segurança completos |
 
-**Pendências obrigatórias para um diagrama de fiação final numerado:** foto nítida frente/verso da placa do usuário, revisão da DEMOEM/DCF51EM256, esquema correspondente, sensor(es) escolhido(s), modelo específico de tela HMI, módulo de bateria/power-path e interface IoT efetiva. Sem isso, **não ligar componentes por numeração presumida de pinos**.
+**Pendências obrigatórias para um diagrama de fiação final numerado:** foto nítida frente/verso da placa do usuário, revisão da DEMOEM/DCF51EM256 (o esquema rev C já está na seção 4.4; conferir se a placa é a mesma revisão), sensor(es) escolhido(s), modelo específico de tela HMI, módulo de bateria/power-path e interface IoT efetiva. Sem isso, **não ligar componentes por numeração presumida de pinos**.
 
 ## 10. Fontes e documentos de projeto
 
 - [NXP — DEMOEM User Manual rev. 1.02](https://www.nxp.com/docs/en/user-guide/DEMOEMUM.pdf): seção 2 (componentes e valores de alimentação), seção 7 (jumpers) e figuras 7-1 a 7-29.
-- [NXP — página oficial DEMOEM (inclui esquemático Protel)](https://www.nxp.com/design/design-center/development-boards-and-designs/DEMOEM).
+- [NXP — página oficial DEMOEM](https://www.nxp.com/design/design-center/development-boards-and-designs/DEMOEM) (placa arquivada).
+- [NXP — esquema da DEMOEM, rev C (`DEMOEMSC.pdf`)](https://www.nxp.com/downloads/en/schematics/DEMOEMSC.pdf): folha 1 (MCF51EM256 e J1 MCU_PORT), folha 3 (MC9S08QE8, filtros e J38), J29 (DADMx). Fonte da seção 4.4.
 - [NXP — MCU MCF51EM256 e manual de referência](https://www.nxp.com/products/MCF51EM).
 - [PRISMA — roteiro de bancada](bancada-demoem.md).
 - [PRISMA — firmware](../firmware/README.md).
