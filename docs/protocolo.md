@@ -124,3 +124,14 @@ O id é escolhido pelo PC e volta na resposta. Um comando com CRC errado é desc
 A rajada de 6 canais ocupa ~0,52 s de serial por janela de ~1 s. Com menos rajadas, a serial fica livre e os resumos (energia, RMS, frequência) seguem em toda janela. A autocalibração para o timer por alguns milissegundos: a janela em andamento é descartada e o `seq` salta um número, então o app conta uma janela perdida em vez de integrar um trecho com buraco. Ela muda levemente o ganho do ADC, então a etapa 1 da calibração (ADC com tensão DC) deve ser refeita depois.
 
 O app identifica a placa sozinho no primeiro resumo `0x02` de cada conexão (só firmware PRISMA contínuo manda esse quadro, então outros aparelhos não recebem bytes inesperados). Os botões ficam na aba Hardware/ADC.
+
+## Pela rede (TCP)
+
+O gateway ESP32-S3 (`gateway/esp32s3`, porta 3333, anunciado por mDNS como `prisma.local`) e a ponte do PC (`scripts/ponte_tcp.py`) servem **os mesmos bytes da serial** numa conexão TCP: JSON, rajadas `0x01`, resumos `0x02` e respostas `0x11`, sem nenhuma moldura extra. O app usa o mesmo decodificador (`prisma.core.link.TcpLink`).
+
+- **Endereço no app:** `IP:porta`, `nome.local`, `tcp://host:porta` ou só o IP (porta 3333). Pode ir na lista de portas, em "Gateway na rede…", ou em `--port`.
+- **Um cliente por vez:** um cliente novo derruba o anterior. No ESP, um cliente lento (Wi-Fi ruim) é desconectado para não travar a ponte; o contador fica em `tcp_slow_drops`.
+- **Reconexão:** o app tenta de novo a cada 2 s quando a conexão cai, ou quando passam 10 s sem nenhum byte (a placa manda um resumo por segundo). A tela mostra "reconectando" e mantém os dados já recebidos.
+- **Comandos vindos da rede:** só passam quadros `0x10` inteiros, com CRC válido, payload de até 16 bytes e código `0x01` (INFO), `0x02` (RAJADA) ou `0x03` (AUTOCALIBRAÇÃO). O resto é descartado e contado (`CommandGate` em `prisma.core.netbridge` e em `gateway/esp32s3/lib/prisma_link`, testados com os mesmos quadros). O `0x04` (reiniciar no bootloader) e os comandos do bootloader (`0x20`–`0x25`) só vão pela USB, que é acesso físico, ou pelo `POST /api/ota` do gateway, que exige token.
+- **Sem autenticação nem criptografia:** quem está na mesma rede lê as medições. Use só em LAN confiável.
+

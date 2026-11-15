@@ -2,12 +2,15 @@
  * PRISMA — gateway ESP32-S3 (protótipo, ainda não validado fisicamente).
  *
  * DEMOEM (SCI3, protocolo v2) <-> UART <-> ESP32-S3 <-> USB CDC (PRISMA no PC)
+ *                                             |-> TCP 3333 (PRISMA na rede, mDNS prisma.local)
  *                                             |-> painel HTTP e /api/status
  *                                             |-> MQTT/TLS (resumos)
  *                                             '-> atualização da DEMOEM (POST /api/ota)
  *
  * - Ponte transparente nos dois sentidos: os bytes da placa vão intactos para a USB
  *   (o PC decodifica JSON e quadros v2), e os comandos do PC vão para a placa.
+ * - Os mesmos bytes saem pela porta TCP para um cliente na rede (o app PRISMA numa
+ *   tela de 10,1" ou noutro PC). Da rede só passam comandos inofensivos (CommandGate).
  * - Os resumos 0x02 da placa (uma janela de ciclos inteiros por ~1 s) viram RMS,
  *   potência e frequência no ESP, com as somas inteiras exatas (lib/prisma_link).
  * - A atualização usa o bootloader PRISMA da DEMOEM, com o mesmo fluxo do PC
@@ -16,6 +19,7 @@
  */
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 #include <PubSubClient.h>
 #include <WebServer.h>
 #include <WiFi.h>
@@ -59,6 +63,12 @@
 // perfil de calibração do PC. Zeros: valores em contagens.
 #define PRISMA_CAL_GAINS {0, 0, 0, 0, 0, 0}
 #endif
+#ifndef PRISMA_TCP_PORT
+#define PRISMA_TCP_PORT 3333  // 0: sem servidor TCP
+#endif
+#ifndef PRISMA_HOSTNAME
+#define PRISMA_HOSTNAME "prisma"  // anunciado por mDNS: prisma.local
+#endif
 #ifndef PRISMA_UART_RX_GPIO
 #define PRISMA_UART_RX_GPIO -1
 #endif
@@ -83,6 +93,11 @@ HardwareSerial boardSerial(1);
 WebServer web(80);
 WiFiClientSecure tls;
 PubSubClient mqtt(tls);
+WiFiServer tcpServer(PRISMA_TCP_PORT > 0 ? PRISMA_TCP_PORT : 3333);
+WiFiClient tcpClient;
+prisma::CommandGate gate;
+bool networkStarted = false;
+uint32_t tcpClients = 0, tcpCommands = 0, tcpDroppedBytes = 0, tcpSlowDrops = 0;
 prisma::LinkParser link;
 prisma::Gains gains;
 
@@ -151,6 +166,16 @@ void pollBoard() {
     const size_t n = boardSerial.read(chunk, min(sizeof(chunk), budget));
     if (!n) break;
     budget -= n;
+    // Rede: um cliente lento (Wi-Fi ruim) é desconectado em vez de travar o laço;
+    // o app reconecta sozinho.
+    if (tcpClient && tcpClient.connected()) {
+      const size_t sent = tcpClient.write(chunk, n);
+      if (sent < n) {
+        tcpDroppedBytes += n - sent;
+        ++tcpSlowDrops;
+        tcpClient.stop();
+      }
+    }
     // Ponte: bytes intactos para o PRISMA no PC. Sem espaço, o pedaço se perde e o
     // PC descarta o quadro pelo CRC (contado aqui em usb_drop_bytes).
     if (Serial) {
@@ -185,6 +210,39 @@ void pollUsb() {
   if (!UART_TX || otaBusy) return;  // durante a atualização pelo ESP, o PC espera
   boardSerial.write(chunk, n);
   usbToBoardBytes += n;
+}
+
+// Rede: servidor TCP de um cliente por vez (um novo substitui o anterior) e mDNS.
+void serviceNetwork() {
+  if (PRISMA_TCP_PORT <= 0 || WiFi.status() != WL_CONNECTED) return;
+  if (!networkStarted) {
+    tcpServer.begin();
+    tcpServer.setNoDelay(true);
+    if (MDNS.begin(PRISMA_HOSTNAME)) {
+      MDNS.addService("http", "tcp", 80);
+      MDNS.addService("prisma", "tcp", PRISMA_TCP_PORT);
+    }
+    networkStarted = true;
+  }
+  WiFiClient incoming = tcpServer.accept();
+  if (incoming) {
+    if (tcpClient) tcpClient.stop();
+    tcpClient = incoming;
+    tcpClient.setNoDelay(true);
+    gate = prisma::CommandGate();
+    ++tcpClients;
+  }
+  if (!tcpClient) return;
+  uint8_t frame[32];
+  for (int budget = 256; budget-- && tcpClient.available();) {
+    const int value = tcpClient.read();
+    if (value < 0) break;
+    const size_t n = gate.feed(static_cast<uint8_t>(value), frame, sizeof(frame));
+    if (n && UART_TX && !otaBusy) {
+      boardSerial.write(frame, n);
+      ++tcpCommands;
+    }
+  }
 }
 
 bool fresh() { return latest.valid && millis() - lastSummaryMs < STALE_MS; }
@@ -417,6 +475,15 @@ void statusPage() {
   doc["usb_drop_bytes"] = usbDroppedBytes;
   doc["usb_to_board_bytes"] = usbToBoardBytes;
   doc["board_message"] = lastStatus;
+  doc["hostname"] = PRISMA_HOSTNAME ".local";
+  doc["tcp_port"] = PRISMA_TCP_PORT;
+  if (tcpClient && tcpClient.connected()) doc["tcp_client"] = tcpClient.remoteIP().toString();
+  else doc["tcp_client"] = nullptr;
+  doc["tcp_clients"] = tcpClients;
+  doc["tcp_commands"] = tcpCommands;
+  doc["tcp_rejected"] = gate.rejected;
+  doc["tcp_drop_bytes"] = tcpDroppedBytes;
+  doc["tcp_slow_drops"] = tcpSlowDrops;
   doc["uart_tx"] = UART_TX;
   doc["ota_enabled"] = otaEnabled();
   doc["ota_busy"] = static_cast<bool>(otaBusy);
@@ -451,6 +518,7 @@ void setup() {
     boardSerial.begin(SERIAL_BAUD, SERIAL_8N1, PRISMA_UART_RX_GPIO, PRISMA_UART_TX_GPIO);
   }
   WiFi.mode(WIFI_STA);  // sem AP público
+  WiFi.setHostname(PRISMA_HOSTNAME);
   WiFi.setAutoReconnect(true);
   if (brokerConfigured()) tls.setCACert(PRISMA_MQTT_CA_PEM);
   mqtt.setServer(PRISMA_MQTT_HOST, PRISMA_MQTT_PORT);
@@ -473,6 +541,7 @@ void loop() {
   pollBoard();
   pollUsb();
   serviceWiFi();
+  serviceNetwork();
   serviceMqtt();
   web.handleClient();
   publish();

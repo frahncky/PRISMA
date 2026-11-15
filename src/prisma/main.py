@@ -4,6 +4,7 @@ Exemplos:
     python -m prisma
     python -m prisma --port COM4 --profile examples/profiles/demoem-ch340.json --connect
     python -m prisma --last --screen 2
+    python -m prisma --port prisma.local --connect --painel   # pelo gateway Wi-Fi
     python -m prisma --painel            # painel touch em tela cheia
 """
 import argparse
@@ -19,7 +20,7 @@ from prisma.ui.main_window import MainWindow, app_icon
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="prisma", description="PRISMA · Programar, Medir, Analisar")
-    parser.add_argument("--port", help="porta serial a selecionar (ex.: COM4)")
+    parser.add_argument("--port", help="porta serial (ex.: COM4) ou gateway na rede (ex.: 192.168.0.20:3333, prisma.local)")
     parser.add_argument("--profile", type=Path, help="perfil de dispositivo JSON")
     parser.add_argument("--connect", action="store_true", help="conectar à serial ao abrir")
     parser.add_argument("--last", action="store_true", help="reusar a última porta e o último perfil e conectar")

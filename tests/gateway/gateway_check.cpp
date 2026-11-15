@@ -1,6 +1,7 @@
 // Programa de teste do núcleo do gateway (gateway/esp32s3/lib/prisma_link), no PC.
 //   gateway_check parse <arquivo>       eventos do LinkParser + resumos medidos
 //   gateway_check srec <arquivo.s19>    imagem montada do S19 (em pedaços de 7 bytes)
+//   gateway_check gate <arquivo>        comandos que o filtro da rede deixa passar
 //   gateway_check flash <s19> <modo>    atualização contra a placa simulada (flash apagada)
 #include <math.h>
 #include <stdio.h>
@@ -74,6 +75,21 @@ int parse(const char *path) {
   }
   printf("counters frames=%u crc=%u bad=%u long=%u\n", parser.frames, parser.crcErrors, parser.badHeaders,
          parser.longLines);
+  return 0;
+}
+
+int gate(const char *path) {
+  const std::vector<uint8_t> data = readFile(path);
+  prisma::CommandGate filter;
+  uint8_t frame[64];
+  for (uint8_t byte : data) {
+    const size_t n = filter.feed(byte, frame, sizeof(frame));
+    if (!n) continue;
+    printf("pass ");
+    for (size_t i = 0; i < n; ++i) printf("%02X", frame[i]);
+    printf("\n");
+  }
+  printf("counters accepted=%u rejected=%u crc=%u\n", filter.accepted, filter.rejected, filter.crcErrors());
   return 0;
 }
 
@@ -161,8 +177,9 @@ int flash(const char *path, const char *mode) {
 
 int main(int argc, char **argv) {
   if (argc >= 3 && strcmp(argv[1], "parse") == 0) return parse(argv[2]);
+  if (argc >= 3 && strcmp(argv[1], "gate") == 0) return gate(argv[2]);
   if (argc >= 3 && strcmp(argv[1], "srec") == 0) return srec(argv[2]);
   if (argc >= 4 && strcmp(argv[1], "flash") == 0) return flash(argv[2], argv[3]);
-  fprintf(stderr, "uso: gateway_check parse|srec|flash ...\n");
+  fprintf(stderr, "uso: gateway_check parse|gate|srec|flash ...\n");
   return 2;
 }

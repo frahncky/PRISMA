@@ -54,6 +54,16 @@ Com a placa:
 .\scripts\criar_atalho.ps1                             # atalho "PRISMA" na área de trabalho
 ```
 
+Pela rede (Wi-Fi), sem cabo entre a placa e a tela: o app conecta no gateway ESP32-S3 (`prisma.local`) ou na ponte do PC, que serve a serial da DEMOEM em TCP. Na lista de portas, escolha **Gateway na rede…**, ou passe o endereço:
+
+```powershell
+uv run python scripts\ponte_tcp.py COM3                 # neste PC: DEMOEM do CH340 na porta TCP 3333
+uv run python scripts\ponte_tcp.py --demo               # sem placa: demonstração de 6 canais pela rede
+.\.venv\Scripts\python.exe -m prisma --port 192.168.0.20:3333 --connect --painel   # em outro PC ou na tela
+```
+
+O app reconecta sozinho se o Wi-Fi cair. Pela rede só passam os comandos de identificar, de rajada e de autocalibração; a atualização de firmware continua local ([protocolo](docs/protocolo.md#pela-rede-tcp)).
+
 ## ✨ Recursos
 
 <table>

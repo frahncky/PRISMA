@@ -114,6 +114,23 @@ def test_ganhos_viram_unidades_fisicas(check, tmp_path):
     assert float(summary["p0"]) == pytest.approx(ref.active(0) * gains[0] * gains[3], rel=1e-9)
 
 
+def test_filtro_da_rede_igual_ao_do_pc(check, tmp_path):
+    from prisma.core.netbridge import CommandGate
+    from prisma.core.protocol import encode_command
+    broken = bytearray(encode_command(5, 0x01))
+    broken[-1] ^= 0xFF
+    stream = (b"texto\n" + encode_command(1, 0x01) + encode_command(2, 0x04)
+              + encode_command(3, 0x22, bytes(12), max_args=138) + bytes(broken)
+              + encode_command(4, 0x02, bytes([30])) + encode_command(6, 0x03) + encode_frame(0x02, b"abc"))
+    data = tmp_path / "net.bin"
+    data.write_bytes(stream)
+    lines = check("gate", data)
+    expected = CommandGate().feed(stream)
+    assert [bytes.fromhex(line.split()[1]) for line in lines if line.startswith("pass")] == expected
+    assert len(expected) == 3  # INFO, RAJADA e ADC_CAL; nunca 0x04 nem 0x22
+    assert lines[-1] == "counters accepted=3 rejected=3 crc=1"
+
+
 def test_s19_monta_a_mesma_imagem_do_pc(check, tmp_path):
     s19 = tmp_path / "app.s19"
     s19.write_text(app_srec(size=5000, seed=4))

@@ -10,12 +10,14 @@ Este projeto PlatformIO + Arduino faz a ponte entre a **DEMOEM/MCF51EM256** e o 
 flowchart LR
   ColdFire["DEMOEM / MCF51EM256<br/>SCI3, protocolo v2"] <-->|"UART 115200 8N1<br/>RX e TX"| ESP["ESP32-S3 gateway"]
   ESP <-->|"USB CDC<br/>ponte transparente"| Desktop["PRISMA no PC"]
+  ESP <-->|"TCP 3333 (prisma.local)<br/>só comandos inofensivos"| Tela["PRISMA na tela 10,1&quot;<br/>ou em outro PC"]
   ESP -->|"HTTP LAN<br/>/ e /api/status"| Web["Painel touch no navegador"]
   Web -->|"POST /api/ota (token)"| ESP
   ESP -->|"MQTT com TLS/CA"| Broker["Broker IoT"]
 ```
 
 - **Ponte transparente** (`src/main.cpp`): os bytes da placa vão intactos para a USB, e o PRISMA no PC decodifica o JSON e os quadros v2 como faz com o CH340. Os comandos do PC (identificar placa, rajadas, `scripts/atualizar_demoem.py`) vão da USB para a placa. Sem espaço na USB, o pedaço se perde e o PC descarta o quadro pelo CRC; o gateway conta esses bytes em `usb_drop_bytes`.
+- **PRISMA pela rede** (porta TCP `PRISMA_TCP_PORT`, padrão 3333): os mesmos bytes da ponte USB vão para um cliente TCP. O app conecta em `prisma.local:3333`, em "Gateway na rede…" ou com `--port`, e reconecta sozinho. Da rede para a placa só passam INFO, RAJADA e AUTOCALIBRAÇÃO; o bootloader fica fora ([protocolo](../../docs/protocolo.md#pela-rede-tcp)). O nome vem de `PRISMA_HOSTNAME` (padrão `prisma`), anunciado por mDNS junto com o serviço `_prisma._tcp`.
 - **Resumos da medição contínua** (`lib/prisma_link`): o gateway lê os quadros `0x02` (uma janela de ciclos inteiros por ~1 s). Ele calcula RMS AC, potência ativa e frequência com as somas inteiras exatas, como o `MeterSummary` do PC. As rajadas `0x01` (até 48 KB) têm o CRC conferido sem ficar na memória.
 - **Unidades:** sem ganhos, os valores saem em contagens do ADC (`v_unit: "counts"`). Com `PRISMA_CAL_GAINS` em `secrets.h`, eles saem em V, A e W. Use o `gain` de cada canal do perfil de calibração do PC. O `offset` não afeta o RMS AC. O `delay_us` (≈ 40 µs das correntes) não é compensado no ESP: o erro em P é de ~0,9° de fase, ou seja, < 0,02 % com FP 1 e maior com carga reativa.
 - **Atualização da DEMOEM** (`POST /api/ota`): recebe o S19 do `EM256 App` e grava pelo bootloader PRISMA ([docs/bootloader.md](../../docs/bootloader.md)). O fluxo e as garantias são os do gravador do PC: a aplicação só roda depois de a placa conferir o CRC-32, e uma gravação interrompida deixa a placa no bootloader. Fica **desligada** sem `PRISMA_OTA_TOKEN` (mínimo de 12 caracteres) e sem os dois pinos da UART. Durante a gravação, o ESP é dono da UART: a ponte USB e os resumos param.
@@ -27,7 +29,7 @@ flowchart LR
 
 | Rota | O que faz |
 | --- | --- |
-| `GET /api/status` | Medição da última janela (`seq`, `window_s`, `f_Hz`, `vrms`, `irms`, `p`, unidades), idade, janelas perdidas, quadros, erros de CRC, bytes perdidos na USB, última mensagem da placa, Wi-Fi e MQTT. |
+| `GET /api/status` | Medição da última janela (`seq`, `window_s`, `f_Hz`, `vrms`, `irms`, `p`, unidades), idade, janelas perdidas, quadros, erros de CRC, bytes perdidos na USB, última mensagem da placa, cliente TCP e comandos recusados da rede, Wi-Fi e MQTT. |
 | `GET /api/ota` | Estado da atualização: `idle`, `receiving`, `flashing`, `done` ou `failed`; etapa, progresso, reenvios, tamanho e CRC-32 da imagem, mensagem. |
 | `POST /api/ota` | Upload multipart do S19 com o cabeçalho `X-Prisma-Token`. Responde 202 e grava em segundo plano. |
 
@@ -46,7 +48,9 @@ curl http://IP_DO_ESP/api/ota
 4. `PRISMA_UART_RX_GPIO=18` e `PRISMA_UART_TX_GPIO=17` são **exemplos**. Confirme o pinout, os pinos reservados, os níveis lógicos (3,3 V) e o GND **antes de ligar os fios**. Com `PRISMA_UART_TX_GPIO=-1`, o gateway só recebe.
 5. Compile e grave o ESP **sem a DEMOEM ligada**. Teste o boot e o Wi-Fi, e encontre o IP na tabela DHCP do roteador.
 6. Ligue **TX3 da DEMOEM (PTC1, J6) → RX do ESP** e **TX do ESP → RX3 da DEMOEM (PTC0, J6, com J10 no PTC0)**. Nunca ligue RS-232 direto na UART de 3,3 V. O terra lógico comum só vale com domínio SELV isolado; caso contrário, use isolador de UART.
-7. No PC, abra o PRISMA, escolha a **porta COM do USB CDC do ESP32-S3** a 115200 baud e conecte. Compare as contagens do painel, do `/api/status` e do PC.
+7. No PC, abra o PRISMA, escolha a **porta COM do USB CDC do ESP32-S3** a 115200 baud e conecte. Ou escolha **Gateway na rede…** e informe `prisma.local` (ou o IP). Compare as contagens do painel, do `/api/status` e do PC.
+
+Antes de ter o ESP, o mesmo fluxo de rede pode ser testado com a ponte do PC: `uv run python scripts/ponte_tcp.py COM3` (ou `--demo`, sem placa).
 
 ```bash
 cd gateway/esp32s3
@@ -58,6 +62,7 @@ pio run -t upload    # grava o ESP32-S3
 
 `tests/test_gateway.py` compila `lib/prisma_link` com g++ no PC e confere:
 
+- o filtro de comandos da rede, que deixa passar os mesmos quadros que o `CommandGate` do PC;
 - o separador de quadros e o resumo `0x02` contra o decodificador Python, com texto, rajada grande, CRC errado, cabeçalho impossível e linha longa;
 - os ganhos;
 - a montagem do S19, que dá a mesma imagem e o mesmo CRC do PC e recusa o que está fora da área, na faixa reservada ou repetido;

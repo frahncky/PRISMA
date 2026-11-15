@@ -23,6 +23,7 @@ from prisma.core.measurement import (summary_measurement, LIMIT_THD_PERCENT, LIM
                                      sequence_components)
 from prisma.core.protocol import CMD_INFO, Sample
 from prisma.core.recording import CsvRecorder
+from prisma.core.link import link_label, network_url
 from prisma.core.serial_reader import SerialReader
 from prisma.core.history import SqliteRecorder
 from prisma.ui import theme
@@ -347,12 +348,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         top.addSpacing(10)
         self.port_combo = QComboBox()
         self.port_combo.setMinimumWidth(190)
-        self.port_combo.setToolTip("Porta serial da placa")
+        self.port_combo.setToolTip("Porta serial da placa ou gateway na rede (Wi-Fi)")
+        self.port_combo.activated.connect(self._on_port_activated)
         top.addWidget(self.port_combo)
         refresh = QPushButton()
         refresh.setObjectName("icon")
         refresh.setIcon(theme.icon("refresh"))
-        refresh.setToolTip("Atualizar portas COM")
+        refresh.setToolTip("Atualizar portas COM e gateways salvos")
         refresh.clicked.connect(self.refresh_ports)
         top.addWidget(refresh)
         self.b_connect = QPushButton("Conectar")
@@ -533,7 +535,24 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.mode_label.setStyleSheet(theme.pill_style(kind))
         self.statusBar().showMessage(label.capitalize())
 
+    NETWORK_ITEM = "__network__"
+
+    def _network_entry(self, url: str) -> int:
+        """Índice do gateway ``url`` na lista, inserido antes de "Gateway na rede…" se faltar."""
+        index = self.port_combo.findData(url)
+        if index < 0:
+            index = max(0, self.port_combo.findData(self.NETWORK_ITEM))
+            self.port_combo.insertItem(index, f"Rede · {link_label(url).removesuffix(' (rede)')}", url)
+        return index
+
     def select_port(self, port: str) -> bool:
+        try:
+            url = network_url(port)
+        except ValueError:
+            return False
+        if url is not None:
+            self.port_combo.setCurrentIndex(self._network_entry(url))
+            return True
         index = self.port_combo.findData(port)
         if index >= 0:
             self.port_combo.setCurrentIndex(index)
@@ -548,10 +567,40 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.port_combo.addItem(f"{port.device} — {port.description}", port.device)
         if not ports:
             self.port_combo.addItem("Nenhuma porta COM", None)
-        else:
-            index = self.port_combo.findData(selected)
-            if index >= 0:
-                self.port_combo.setCurrentIndex(index)
+        self.port_combo.addItem("Gateway na rede…", self.NETWORK_ITEM)
+        saved = self.settings.value("last_network")
+        if saved:
+            self._network_entry(str(saved))
+        if selected and selected != self.NETWORK_ITEM:
+            self.select_port(selected)
+        elif ports:
+            self.port_combo.setCurrentIndex(0)
+
+    def _on_port_activated(self, index: int) -> None:
+        if self.port_combo.itemData(index) == self.NETWORK_ITEM:
+            self.ask_network_address()
+
+    def ask_network_address(self) -> str | None:
+        """Pede IP:porta do gateway (ESP32-S3 ou scripts/ponte_tcp.py) e o seleciona."""
+        from PySide6.QtWidgets import QInputDialog
+        current = str(self.settings.value("last_network", "tcp://prisma.local:3333"))
+        text, ok = QInputDialog.getText(
+            self, "Gateway na rede",
+            "Endereço do gateway (IP ou nome, porta padrão 3333):\n"
+            "ex.: 192.168.0.20:3333 ou prisma.local",
+            text=current.removeprefix("tcp://"))
+        url = None
+        if ok and text.strip():
+            try:
+                url = network_url(text) or network_url("tcp://" + text.strip())
+            except ValueError as exc:
+                QMessageBox.warning(self, "Endereço inválido", str(exc))
+        if url is None:
+            self.refresh_ports()
+            return None
+        self.settings.setValue("last_network", url)
+        self.port_combo.setCurrentIndex(self._network_entry(url))
+        return url
 
     def connect_serial(self) -> None:
         if self.reader is not None and self.reader.isRunning():
@@ -566,6 +615,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self._connect_button(False)
             return
         port = self.port_combo.currentData()
+        if port == self.NETWORK_ITEM:
+            port = self.ask_network_address()
+            if port is None:
+                return
         if port is None:
             QMessageBox.warning(
                 self, "Sem porta COM",
@@ -580,7 +633,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._invalidate_analysis()
         self.hardware_view.setPlainText("Aguardando telemetria de estados do firmware.")
         self._invalid_sample_logs = 0
-        self._set_mode(f"CONECTANDO A {port} — SEM DADOS")
+        self._set_mode(f"CONECTANDO A {link_label(port)} — SEM DADOS")
         self.reader = SerialReader(port, self.device_profile.baudrate, parent=self, parser=self.sample_parser)
         reader = self.reader
         self.reader.connected.connect(lambda: self._on_connected(port) if self.reader is reader else None)
@@ -594,6 +647,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.board_info = None
         self.reader.message.connect(self._log)
         self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
+        self.reader.reconnecting.connect(lambda: self._on_reconnecting(port) if self.reader is reader else None)
         self.reader.start()
         self._connect_button(True)
 
@@ -605,8 +659,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.b_connect.style().polish(self.b_connect)
 
     def _on_connected(self, port: str) -> None:
-        self._set_link_status(f"{port} conectada", theme.SUCCESS)
-        self._set_mode(f"SERIAL {port} — AGUARDANDO AMOSTRAS")
+        self._set_link_status(f"{link_label(port)} conectada", theme.SUCCESS)
+        self._set_mode(f"SERIAL {link_label(port)} — AGUARDANDO AMOSTRAS")
 
     def _on_sample(self, sample: Sample, record_t: float | None = None) -> None:
         try:
@@ -619,7 +673,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
             return
         self._record_sample(sample if record_t is None else replace(sample, t=record_t))
         if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
-            port = self.reader.port if self.reader else "COM"
+            port = link_label(self.reader.port) if self.reader else "COM"
             self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
 
     def _block_record_times(self, block, arrival: float | None = None) -> list[float]:
@@ -748,6 +802,12 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 else "tensão no pino ADC (ADC calibrado)" if self.calibration.pin_volts else "calibração ativa")
         self.statusBar().showMessage(
             f"Rajada {block.seq}: {len(block.samples)} amostras de {names} a {block.fs_hz:.1f} Hz · {unit}{warning}")
+
+    def _on_reconnecting(self, port: str) -> None:
+        """Gateway na rede caiu: a thread tenta de novo; os dados já recebidos ficam."""
+        self._set_link_status(f"{link_label(port)} — reconectando…", theme.WARNING)
+        self._set_mode(f"RECONECTANDO A {link_label(port)} — DADOS RETIDOS")
+        self._board_info_asked = False
 
     def _on_disconnected(self) -> None:
         self.stop_recording()

@@ -69,6 +69,7 @@
 - [x] Código inicial de MQTT com TLS/CA, NTP, reconexão e contadores, sem credenciais no Git
 - [x] Gateway no protocolo v2: ponte USB transparente nos dois sentidos, resumos `0x02` (RMS, P e frequência exatos) e atualização da DEMOEM por Wi-Fi pelo bootloader; núcleo testado no PC contra o bootloader simulado
 - [x] Firmware ESP32-S3 compila no PlatformIO (`pio run`)
+- [x] App PRISMA pela rede: gateway ESP32-S3 (TCP 3333, mDNS `prisma.local`) ou ponte serial→TCP no PC, reconexão automática e filtro que deixa passar só comandos inofensivos; testado no PC com a ponte de demonstração
 - [x] Documentação de ligação, power-path, sensores, interfaces, riscos e testes
 - [ ] Gravação do firmware ESP32-S3 na placa adquirida e teste da ponte e da atualização com a DEMOEM
 - [ ] Teste de encaminhamento USB CDC (115200 8N1), perdas, latência e qualidade temporal

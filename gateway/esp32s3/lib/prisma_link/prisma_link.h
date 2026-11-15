@@ -73,6 +73,25 @@ class LinkParser {
 size_t encodeCommand(uint8_t id, uint8_t code, const uint8_t *args, size_t nArgs, uint8_t *out,
                      size_t capacity);
 
+// Comandos que podem chegar pela rede (TCP): identificar (0x01), rajadas (0x02) e
+// autocalibração do ADC (0x03). Bootloader e gravação de flash só pela USB ou pelo
+// POST /api/ota com token. Mesmas regras de prisma.core.netbridge.CommandGate.
+bool remoteCommandAllowed(uint8_t code);
+constexpr uint16_t kMaxRemoteCommandPayload = 16;
+
+class CommandGate {
+ public:
+  // Processa um byte vindo da rede. Quando completa um comando permitido, com CRC
+  // válido, copia o quadro inteiro para out e devolve o tamanho; senão, 0.
+  size_t feed(uint8_t value, uint8_t *out, size_t capacity);
+  uint32_t accepted = 0;
+  uint32_t rejected = 0;  // quadros válidos fora da lista (ou que não são comando)
+  uint32_t crcErrors() const { return parser_.crcErrors; }
+
+ private:
+  LinkParser parser_;
+};
+
 struct Reply {
   uint8_t id = 0, code = 0, status = 0;
   const uint8_t *data = nullptr;

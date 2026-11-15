@@ -81,7 +81,10 @@ async function refresh(){
     resumos:d.summaries,janelas_perdidas:d.lost_windows,rajadas:d.bursts,respostas:d.replies,
     quadros:d.frames,erros_crc:d.crc_errors,cabecalhos_invalidos:d.bad_headers,linhas_longas:d.long_lines,
     usb_bytes_perdidos:d.usb_drop_bytes,usb_para_placa_bytes:d.usb_to_board_bytes,
-    mensagem_da_placa:d.board_message,uart_tx:d.uart_tx,atualizacao:d.ota_enabled,
+    mensagem_da_placa:d.board_message,
+    endereco_para_o_app:d.tcp_port?d.hostname+':'+d.tcp_port:'desligado',cliente_tcp:d.tcp_client,
+    conexoes_tcp:d.tcp_clients,comandos_da_rede:d.tcp_commands,recusados_da_rede:d.tcp_rejected,
+    tcp_bytes_perdidos:d.tcp_drop_bytes,clientes_lentos_desconectados:d.tcp_slow_drops,uart_tx:d.uart_tx,atualizacao:d.ota_enabled,
     wifi:d.wifi,mqtt:d.mqtt,mqtt_enviadas:d.mqtt_sent,mqtt_falhas:d.mqtt_failures,bateria_V:d.battery_V
    },null,2));
  }catch(err){set('state','DESCONECTADO');set('diagnostics',String(err))}

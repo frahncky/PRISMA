@@ -154,6 +154,22 @@ size_t encodeCommand(uint8_t id, uint8_t code, const uint8_t *args, size_t nArgs
   return total;
 }
 
+bool remoteCommandAllowed(uint8_t code) { return code >= 0x01 && code <= 0x03; }
+
+size_t CommandGate::feed(uint8_t value, uint8_t *out, size_t capacity) {
+  if (parser_.feed(value) != LinkParser::kFrame) return 0;
+  const uint16_t length = parser_.length();
+  if (parser_.type() != kFrameCommand || length < 2 || length > kMaxRemoteCommandPayload ||
+      !remoteCommandAllowed(parser_.payload()[1])) {
+    ++rejected;
+    return 0;
+  }
+  const uint8_t *p = parser_.payload();
+  const size_t size = encodeCommand(p[0], p[1], p + 2, length - 2u, out, capacity);
+  if (size) ++accepted;
+  return size;
+}
+
 bool parseReply(const uint8_t *payload, size_t length, Reply &out) {
   if (length < 3) return false;
   out.id = payload[0];
