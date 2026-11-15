@@ -2,22 +2,31 @@
 .SYNOPSIS
   Compila (opcional) e grava o firmware da DEMOEM pelo HI-WAVE/PEmicro, sem interação.
 .DESCRIPTION
-  Usa a configuração CFV1_BDM_P&E_Multilink_CyclonePro.ini do projeto "EM256 Demo":
-  LOAD com VERIFYALL, GO e encerra o HI-WAVE. Feche qualquer sessão HI-WAVE aberta antes.
+  Usa a configuração CFV1_BDM_P&E_Multilink_CyclonePro.ini do projeto "EM256 Demo"
+  (mesma placa e mesmo cabo para todos os projetos): apaga a flash, LOAD com
+  VERIFYALL, GO e encerra o HI-WAVE. Feche qualquer sessão HI-WAVE aberta antes.
+  -Projeto "EM256 Boot" grava o bootloader; como a flash inteira é apagada, a
+  placa fica no bootloader até receber a aplicação pela serial
+  (scripts/atualizar_demoem.py). A aplicação ("EM256 App") não se grava por aqui.
 .EXAMPLE
   .\scripts\gravar_demoem.ps1 -Build
+.EXAMPLE
+  .\scripts\gravar_demoem.ps1 -Projeto 'EM256 Boot' -Build
 #>
 param(
+    [ValidateSet('EM256 Demo', 'EM256 Boot')]
+    [string]$Projeto = 'EM256 Demo',
     [switch]$Build,
     [int]$TimeoutSeconds = 180,
     [string]$CodeWarrior = 'C:\Program Files (x86)\Freescale\CodeWarrior for Microcontrollers V6.3'
 )
 $ErrorActionPreference = 'Stop'
-$project = Join-Path $PSScriptRoot '..\firmware\codewarrior\EM256 Demo' | Resolve-Path
+$project = Join-Path $PSScriptRoot "..\firmware\codewarrior\$Projeto" | Resolve-Path
+$demo = Join-Path $PSScriptRoot '..\firmware\codewarrior\EM256 Demo' | Resolve-Path
 $abs = Join-Path $project 'bin\Project.abs'
 
 if ($Build) {
-    & (Join-Path $PSScriptRoot 'compilar_demoem.ps1') -CodeWarrior $CodeWarrior
+    & (Join-Path $PSScriptRoot 'compilar_demoem.ps1') -Projeto $Projeto -CodeWarrior $CodeWarrior
 }
 if (-not (Test-Path $abs)) { throw "Artefato inexistente: $abs" }
 $hash = (Get-FileHash $abs -Algorithm SHA256).Hash
@@ -43,7 +52,7 @@ $cmd = Join-Path $project 'bin\prisma_auto_flash.cmd'
 if (Test-Path $log) { Remove-Item $log -Force }
 
 $hiwave = Join-Path $CodeWarrior 'prog\hiwave.exe'
-$ini = Join-Path $project 'CFV1_BDM_P&E_Multilink_CyclonePro.ini'
+$ini = Join-Path $demo 'CFV1_BDM_P&E_Multilink_CyclonePro.ini'
 $proc = Start-Process -FilePath $hiwave -WorkingDirectory $project -PassThru `
     -ArgumentList @("-Prod=`"$ini`"", "-Cmd=`"call \`"$cmd\`"`"")
 if (-not $proc.WaitForExit($TimeoutSeconds * 1000)) {

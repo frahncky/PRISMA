@@ -8,8 +8,8 @@ Objetivo: atualizar o firmware da DEMOEM pela mesma serial da telemetria, sem o 
 | --- | --- |
 | Protocolo e núcleo em C (`firmware/include/prisma_boot.h`) | Pronto. Testado no PC com flash simulada (`tests/test_bootloader.py`). |
 | Gravador no PC (`prisma.core.bootloader`, `scripts/atualizar_demoem.py`) | Pronto. Lê o S19, repete o que se perde e só confirma com o CRC-32 da placa. |
-| Projeto do bootloader no CodeWarrior (driver da flash, salto para a aplicação) | **Pendente.** |
-| Aplicação ligada em 0x20000 e comando `0x04` (reiniciar no bootloader) | **Pendente.** |
+| Bootloader no CodeWarrior (`firmware/codewarrior/EM256 Boot`) | Compilado: ~5 KB no bloco 1, driver do bloco 2 e salto conferidos no mapa e no código gerado. **Não gravado.** |
+| Aplicação para o bootloader (`firmware/codewarrior/EM256 App`) | Compilada: ~7 KB a partir de 0x20000, vetores na RAM, interrupções terminando em `RTE`, comando `0x04`. **Não gravada.** |
 | Teste na placa | **Bloqueado:** o RX3 (CH340 TXD → PTC0) ainda não recebe; ver [bancada](bancada-demoem.md). |
 
 ## Mapa de memória (MCF51EM256)
@@ -24,7 +24,26 @@ A flash tem dois blocos independentes. O bootloader roda no bloco 1 e grava o bl
 | `0x3FC00–0x3FFFF` | Descritor da aplicação: magic `PRSM`, tamanho, CRC-32 e CRC invertido. |
 | `0x800000–0x8003FF` (RAM) | Cópia da tabela de vetores da aplicação. O ColdFire V1 só aceita o VBR em `0x0` ou no início da RAM. |
 
-A licença Special Edition do CodeWarrior limita cada imagem a 64 KB de código. Isso basta para a aplicação atual (~5 KB). Falta confirmar que o linker aceita a aplicação em `0x20000`.
+A licença Special Edition do CodeWarrior limita cada imagem a 64 KB de código. A aplicação (~7 KB) ligou sem problema em `0x20000`, e o linker dela vai até `0x2FFFF`.
+
+## Projetos
+
+São três projetos CodeWarrior, compilados por `scripts/compilar_demoem.ps1 -Projeto '<nome>'`:
+
+| Projeto | O que é | Como grava |
+| --- | --- | --- |
+| `EM256 Demo` | Firmware independente, sem bootloader. É o que está na placa hoje. | PEmicro: `scripts/gravar_demoem.ps1` |
+| `EM256 Boot` | Bootloader (`Sources/main.c` próprio). | PEmicro: `scripts/gravar_demoem.ps1 -Projeto 'EM256 Boot'`. Apaga a flash inteira, então a placa fica no bootloader. |
+| `EM256 App` | O **mesmo** `main.c` do Demo, incluído com `PRISMA_APP_IMAGE=1`. | Serial: `uv run python scripts/atualizar_demoem.py COM3 "firmware/codewarrior/EM256 App/bin/Project.abs.S19"` |
+
+O código da medição fica só no `EM256 Demo/Sources/main.c`. O `EM256 App` apenas o inclui, então não há duas cópias para manter. Com `PRISMA_APP_IMAGE=1`:
+- o cabeçalho SP/PC fica em `0x20000`;
+- os trims do bloco 1 e a tabela de vetores da flash saem (`PRISMA_NO_FLASH_VECTORS` no `exceptions.c`);
+- as interrupções usam `interrupt void f(void)`, sem número de vetor;
+- `App_InstallVectors` monta a tabela na RAM e grava o VBR com `MOVEC D0,VBR`. Vai como `dc.w 0x4E7B,0x0801`, porque o assembler embutido não conhece o `VBR`;
+- o comando `0x04` grava `BOOT` em `0x803FF0` e força um reset com o opcode ilegal `0x4AFC`.
+
+O bootloader roda sem interrupções e lê a SCI3 por varredura. O `F2CDIV` vale `0x4C`, o que dá 191,6 kHz. O tamanho de setor de 1 KiB vem da família Flexis e falta confirmar no manual do MCF51EM256. Se o setor for de 2 KiB, só o limite da área precisa mudar (`APP_END` e o descritor).
 
 ## Protocolo
 
@@ -55,15 +74,17 @@ O bootloader em si nunca se regrava pela serial. Se ele estiver errado, a corre�
 ## Entrada no bootloader
 
 - Na partida, sem aplicação válida, a placa fica no bootloader.
+- Com aplicação válida, o bootloader ainda espera ~150 ms por um comando dele. Isso recupera uma aplicação que trava logo na partida: o PC manda INFO sem parar enquanto alguém reinicia a placa.
 - Com aplicação válida, a aplicação atende o comando `0x04` (rev 4): grava uma palavra mágica numa posição da RAM que a inicialização não apaga e força um reset (opcode ilegal). O bootloader vê a palavra e fica.
 - O PC (ou o ESP32) manda o INFO do bootloader. Se não houver resposta, manda `0x04` para a aplicação e tenta de novo.
 
-## Próximos passos
+## Validação na placa (pendente)
 
-1. Criar o projeto `EM256 Boot` no CodeWarrior, copiando o `EM256 Demo` com outro `main.c` e outro linker:
-   - driver do bloco 2: `F2CDIV = 0x4C`, que dá ~192 kHz a partir de 19,92 MHz; comandos `0x20` (longword) e `0x40` (página);
-   - SCI3 sem interrupção, por varredura;
-   - salto para a aplicação: copia os vetores para a RAM, ajusta `VBR = 0x800000`, carrega SP e PC.
-2. Aplicação: linker em `0x20000`, RAM a partir de `0x800400`, sem os bytes de trim em `0x3FE`, mais o comando `0x04`.
-3. Gravar o bootloader pelo PEmicro e a aplicação pelo `scripts/atualizar_demoem.py`, depois que o RX3 funcionar.
-4. ESP32-S3: mesmo fluxo do `BootClient`, com a imagem recebida por Wi-Fi.
+Depende do RX3: hoje o sinal do CH340 não chega ao PTC0.
+
+1. Gravar o bootloader: `scripts/gravar_demoem.ps1 -Projeto 'EM256 Boot' -Build`. Na serial deve aparecer `BOOTLOADER (SEM APP)`.
+2. Gravar a aplicação pela serial com `scripts/atualizar_demoem.py`. Os resumos `0x02` devem voltar como no Demo, e o INFO deve informar firmware rev 4.
+3. Testar o comando `0x04` (reiniciar no bootloader) e uma segunda atualização. Desligar a placa no meio de uma gravação e conferir que ela volta no bootloader.
+4. Se algo der errado, o PEmicro regrava o `EM256 Demo` como antes.
+
+Depois: o ESP32-S3 roda o mesmo fluxo do `BootClient`, com a imagem recebida por Wi-Fi.

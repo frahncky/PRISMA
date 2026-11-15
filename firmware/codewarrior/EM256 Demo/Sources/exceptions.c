@@ -315,6 +315,9 @@ vectorTableEntryType vector_printf @Vtrap14     = TrapHandler_printf;
  *  CF V1 has 114 vector + SP_INIT in the vector table (115 entries)
  */
 
+/* PRISMA: a imagem para o bootloader (EM256 App) define PRISMA_NO_FLASH_VECTORS:
+ * a tabela em 0x0 é do bootloader e a aplicação monta a sua na RAM. */
+#ifndef PRISMA_NO_FLASH_VECTORS
 __declspec(weak) vectorTableEntryType vector_0   @INITSP = (vectorTableEntryType)&_SP_INIT;
 __declspec(weak) vectorTableEntryType vector_1   @INITPC = (vectorTableEntryType)&_startup;
 __declspec(weak) vectorTableEntryType vector_2   @Vaccerr = asm_exception_handler;
@@ -432,6 +435,7 @@ __declspec(weak) vectorTableEntryType vector_111 @VReserved111 = asm_exception_h
 __declspec(weak) vectorTableEntryType vector_112 @Vftsr1 = asm_exception_handler;
 __declspec(weak) vectorTableEntryType vector_113 @Vftsr2 = asm_exception_handler;
 __declspec(weak) vectorTableEntryType vector_114 @VReserved114 = asm_exception_handler;
+#endif /* PRISMA_NO_FLASH_VECTORS */
 
 
 

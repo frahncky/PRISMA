@@ -252,3 +252,27 @@ def test_sem_placa_o_cliente_desiste_com_erro_claro():
     with pytest.raises(BootError, match="Sem resposta"):
         BootClient(Mute(), timeout=0.05, retries=1).info()
     assert isinstance(FlashImage(APP, b"\xff" * 4).crc, int)
+
+
+def _built(project: str) -> dict[int, int]:
+    s19 = ROOT / f"firmware/codewarrior/{project}/bin/Project.abs.S19"
+    if not s19.exists():
+        pytest.skip(f"{project} não compilado (scripts/compilar_demoem.ps1 -Projeto '{project}')")
+    return parse_srec(s19.read_text(encoding="ascii"))
+
+
+def test_aplicacao_compilada_cabe_na_area_do_bootloader():
+    image = build_image(_built("EM256 App"), INFO)  # recusa bloco 1 e faixa reservada
+    sp, pc = struct.unpack_from(">II", image.data)
+    assert APP + 0x410 <= pc < image.end  # _startup dentro da imagem
+    assert 0x800400 < sp <= 0x803FF0  # pilha na RAM da aplicação, abaixo do pedido de bootloader
+    assert image.end <= APP + 0x10000  # limite de 64 KiB da licença do CodeWarrior
+
+
+def test_bootloader_compilado_fica_no_bloco_1_com_vetores_e_trim():
+    memory = _built("EM256 Boot")
+    assert max(memory) < 0x20000
+    reset_sp = int.from_bytes(bytes(memory[a] for a in range(0, 4)), "big")
+    reset_pc = int.from_bytes(bytes(memory[a] for a in range(4, 8)), "big")
+    assert 0x800000 < reset_sp < 0x803FF0 and 0x410 <= reset_pc < 0x20000
+    assert memory[0x3FF] == 0xA0  # trim do relógio, como no firmware independente

@@ -20,8 +20,33 @@
 #ifndef PRISMA_ICS_FTRIM
 #define PRISMA_ICS_FTRIM 0x00U
 #endif
+/* 1: imagem para o bootloader (projeto "EM256 App"): ligada em 0x20000, sem
+ * vetores nem trims no bloco 1 (são do bootloader), tabela de vetores na RAM e
+ * comando 0x04 para reiniciar no bootloader. 0: imagem independente, gravada
+ * pelo PEmicro (este projeto). Ver docs/bootloader.md. */
+#ifndef PRISMA_APP_IMAGE
+#define PRISMA_APP_IMAGE 0
+#endif
+
+#if !PRISMA_APP_IMAGE
 const byte prisma_nv_ftrim @0x000003FE = PRISMA_ICS_FTRIM;
 const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
+#else
+/* Cabeçalho lido pelo bootloader: SP e PC iniciais, como um vetor de reset. */
+typedef void (*prisma_vector)(void);
+extern unsigned long far _SP_INIT[];
+extern void _startup(void);
+prisma_vector prisma_app_sp @0x00020000 = (prisma_vector)_SP_INIT;
+prisma_vector prisma_app_pc @0x00020004 = (prisma_vector)_startup;
+#endif
+
+/* Interrupções: na imagem independente o vetor fica na tabela da flash (sintaxe
+ * do HCS08 porting support); na imagem do bootloader, a tabela fica na RAM. */
+#if PRISMA_APP_IMAGE
+#define PRISMA_ISR(vector, name) interrupt void name(void)
+#else
+#define PRISMA_ISR(vector, name) interrupt vector void name(void)
+#endif
 
 #ifndef PRISMA_SCI_BAUD
 #define PRISMA_SCI_BAUD 115200UL
@@ -58,8 +83,22 @@ const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 #endif
 
 /* Revisão do firmware informada pelo comando INFO: 1 = rajada, 2 = medição
- * contínua, 3 = comandos pela RX3 (rajada configurável e autocalibração do ADC). */
+ * contínua, 3 = comandos pela RX3 (rajada configurável e autocalibração do ADC),
+ * 4 = imagem do bootloader (comando 0x04). */
+#if PRISMA_APP_IMAGE
+#define PRISMA_FW_REV 4U
+#if !PRISMA_CONTINUOUS
+#error "PRISMA_APP_IMAGE requer PRISMA_CONTINUOUS (comandos pela RX3)"
+#endif
+#else
 #define PRISMA_FW_REV 3U
+#endif
+
+/* Pedido de "fique no bootloader": palavra no fim da RAM, fora do que as
+ * inicializações zeram (as duas imagens terminam a RAM em 0x803FF0). */
+#define PRISMA_CMD_ENTER_BOOT 0x04U
+#define PRISMA_BOOT_REQUEST (*(volatile unsigned long *)0x00803FF0UL)
+#define PRISMA_BOOT_REQUEST_MAGIC 0x424F4F54UL  /* "BOOT" */
 
 /* Canais na medição contínua:
  * 3: tensões AD4/AD5/AD6 (modo validado em bancada).
@@ -320,7 +359,7 @@ static void MTIM1_Init(void)
 
 #if PRISMA_CONTINUOUS
 /* Ler S1 e depois D limpa RDRF e OR. Bits de erro: OR 0x08, NF 0x04, FE 0x02, PF 0x01. */
-interrupt VectorNumber_Vsci3rx void SCI3_RX_ISR(void)
+PRISMA_ISR(VectorNumber_Vsci3rx, SCI3_RX_ISR)
 {
   byte status = SCI3S1;
   byte value = SCI3D;
@@ -388,7 +427,7 @@ static byte have_prev;
  */
 /* Sintaxe do porting support HCS08 do projeto: a entrada do vetor 75 sai daqui
  * e substitui a fraca (weak) de exceptions.c. */
-interrupt VectorNumber_Vmtim1 void MTIM1_ISR(void)
+PRISMA_ISR(VectorNumber_Vmtim1, MTIM1_ISR)
 {
   unsigned short x[PRISMA_CHANNELS];
   byte timeout;
@@ -558,6 +597,29 @@ static void Burst_Send(void)
 }
 #endif
 
+#if PRISMA_APP_IMAGE
+/* Tabela de vetores na RAM (o ColdFire V1 só aceita o VBR em 0x0 ou no início
+ * da RAM; 0x0 é do bootloader). 115 entradas; o linker começa a RAM em 0x800400. */
+#define APP_VBR 0x00800000UL
+#define APP_VECTORS 115U
+extern void asm_exception_handler(void);
+
+static void App_InstallVectors(void)
+{
+  unsigned long *table = (unsigned long *)APP_VBR;
+  byte i;
+  for (i = 0U; i < APP_VECTORS; ++i) {
+    table[i] = (unsigned long)asm_exception_handler;
+  }
+  table[VectorNumber_Vmtim1] = (unsigned long)MTIM1_ISR;
+  table[VectorNumber_Vsci3rx] = (unsigned long)SCI3_RX_ISR;
+  asm {
+    move.l #0x00800000,d0
+    dc.w 0x4E7B,0x0801                        /* MOVEC D0,VBR (o assembler embutido não conhece VBR) */
+  }
+}
+#endif
+
 #if PRISMA_CONTINUOUS
 /* Prepara a conversão lida no 1º tick, na partida e depois da autocalibração. */
 static void Meter_Prime(void)
@@ -619,10 +681,19 @@ static void Command_Run(void)
     Meter_CalibrateAdc();
     data[0] = adc_cal_result;
     prisma_cmd_reply(SCI3_PutByte, &cmd, PRISMA_REPLY_OK, data, 1U);
+#if PRISMA_APP_IMAGE
+  } else if ((code == PRISMA_CMD_ENTER_BOOT) && (args == 0U)) {
+    prisma_cmd_reply(SCI3_PutByte, &cmd, PRISMA_REPLY_OK, data, 0U);
+    while (SCI3S1_TC == 0U) {                 /* a resposta sai inteira antes do reset */
+    }
+    DisableInterrupts;
+    PRISMA_BOOT_REQUEST = PRISMA_BOOT_REQUEST_MAGIC;
+    asm { dc.w 0x4AFC }                       /* ILLEGAL: reset (CPUCR.IRD = 0 depois do reset) */
+#endif
   } else {
     prisma_cmd_reply(SCI3_PutByte, &cmd,
-                     ((code >= PRISMA_CMD_INFO) && (code <= PRISMA_CMD_ADC_CAL)) ? PRISMA_REPLY_BAD_ARGS
-                                                                                : PRISMA_REPLY_UNKNOWN,
+                     (((code >= PRISMA_CMD_INFO) && (code <= PRISMA_CMD_ADC_CAL)) || (code == PRISMA_CMD_ENTER_BOOT))
+                       ? PRISMA_REPLY_BAD_ARGS : PRISMA_REPLY_UNKNOWN,
                      data, 0U);
   }
 }
@@ -674,6 +745,9 @@ void main(void)
   (void)SCI3S1;                               /* Limpa RDRF/OR de lixo da partida. */
   (void)SCI3D;
   SCI3C2 = (byte)(SCI3C2 | SCI3C2_RIE_MASK);  /* Interrupção de recepção. */
+#if PRISMA_APP_IMAGE
+  App_InstallVectors();
+#endif
   MTIM1SC = 0x60U;                            /* TOIE + TRST: run with IRQ. */
   EnableInterrupts;
 
