@@ -822,7 +822,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 tag.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                 tag.setPos(current.real * 1.3, current.imag * 1.3)
                 self.phasor.addItem(tag)
-        self.phasor_title.setText("FASORES · V (cheio) e I (tracejado)" if i_peak > 1e-12 else "FASORES DE TENSÃO")
+        self.phasor_title.setText("FASORES" if i_peak > 1e-12 else "FASORES DE TENSÃO")
         self.harmonics.clear()
         heights = np.array(result.harmonic_percent[1:])
         last_harmonic = len(result.harmonic_percent)

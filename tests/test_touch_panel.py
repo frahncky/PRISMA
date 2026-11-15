@@ -69,7 +69,7 @@ def test_fasores_harmonicas_e_tendencias(app):
     result = _measurement()
     panel = _panel(app, result, _stats(result))
     panel.show_page(PHASORS)
-    assert "corrente (tracejado)" in panel.phasor_title.text()
+    assert panel.phasor_title.text() == "FASORES"
     assert "THD" in panel.harmonic_title.text()
     panel.show_page(TRENDS)
     x, y = panel.trend_p_curve.getData()

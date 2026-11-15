@@ -389,4 +389,4 @@ def test_fasores_usam_fase_a_como_referencia_por_padrao(window):
     assert window.meter.cells[("ang", "B")].text() in ("-120.0°", "-119.9°", "-120.1°")
     labels = {item.toPlainText() for item in window.phasor.getPlotItem().items if hasattr(item, "toPlainText")}
     assert {"Va", "Vb", "Vc", "Ia", "Ib", "Ic"} <= labels  # correntes também no diagrama
-    assert "I (tracejado)" in window.phasor_title.text()
+    assert window.phasor_title.text() == "FASORES"

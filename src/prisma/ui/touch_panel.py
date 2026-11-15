@@ -584,8 +584,7 @@ class TouchPanel(QWidget):
 
     def _refresh_phasors(self, result: Measurement | None) -> None:
         with_currents = _draw_phasors(self.phasor_plot, result)
-        self.phasor_title.setText("FASORES · tensão (cheio) e corrente (tracejado), fase A em 0°"
-                                  if with_currents else "FASORES DE TENSÃO · fase A em 0°")
+        self.phasor_title.setText("FASORES" if with_currents else "FASORES DE TENSÃO")
         thd = _draw_harmonics(self.harmonic_plot, result)
         self.harmonic_title.setText("HARMÔNICAS · taxa de amostragem insuficiente" if thd is None
                                     else f"HARMÔNICAS · TENSÃO FASE A · THD {_br(thd, 1)} %")
