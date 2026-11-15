@@ -338,3 +338,13 @@ class MeterStats:
                 None if total is None else total.active_w, self.demand_w if total is not None else None))
             while len(self.trend) > self.trend_points:
                 self.trend.popleft()
+
+
+def load_nature(reactive_var: float, tolerance: float = 1e-9) -> str:
+    """Natureza da carga pelo sinal de Q: "Indut." (Q > 0, corrente atrasada),
+    "Capac." (Q < 0, corrente adiantada) ou "" (resistiva / Q nulo)."""
+    if reactive_var > tolerance:
+        return "Indut."
+    if reactive_var < -tolerance:
+        return "Capac."
+    return ""

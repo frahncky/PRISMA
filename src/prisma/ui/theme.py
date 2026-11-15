@@ -85,6 +85,7 @@ QLabel#meterHead {{ color: {MUTED}; font-size: 11px; font-weight: 700; }}
 QLabel#meterRow {{ color: {MUTED}; font-size: 13px; }}
 QLabel#meterCell {{ color: {TEXT}; font-size: 15px; font-weight: 600; }}
 QLabel#meterTotal {{ color: #ffffff; font-size: 15px; font-weight: 700; }}
+QLabel#notice {{ background: #2a2110; border: 1px solid #5a4519; border-radius: 10px; padding: 8px 12px; color: {TEXT}; }}
 QLabel#panelTitle {{ color: {MUTED}; font-size: 11px; font-weight: 700; letter-spacing: 1px; }}
 QLabel#muted {{ color: {MUTED}; }}
 QLabel#section {{ color: {SUBTLE}; font-size: 10px; font-weight: 700; letter-spacing: 1.4px; }}
@@ -136,6 +137,12 @@ QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
 QProgressBar {{ background: {SURFACE_2}; border: none; border-radius: 5px; }}
 QProgressBar::chunk {{ background: {ACCENT}; border-radius: 5px; }}
 """
+
+
+def phase_legend(symbol: str) -> str:
+    """Legenda colorida "━ Va  ━ Vb  ━ Vc" (ou Ia/Ib/Ic) em HTML."""
+    return "&nbsp;&nbsp;&nbsp;".join(
+        f"<span style='color:{PHASE[p]}'>━ {symbol}{p.lower()}</span>" for p in "ABC")
 
 
 def pill_style(kind: str) -> str:

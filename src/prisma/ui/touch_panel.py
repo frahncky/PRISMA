@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (QButtonGroup, QGridLayout, QHBoxLayout, QLabel, Q
                                QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, Measurement, MeterStats,
-                                     sequence_components, totals)
+                                     load_nature, sequence_components, totals)
 from prisma.core.query import alerts
 from prisma.ui import theme
 
@@ -46,25 +46,26 @@ QWidget#touchPanel {{ background: {theme.BG}; }}
 QPushButton#tile {{ background: {theme.SURFACE}; border: 1px solid {theme.BORDER}; border-radius: 18px;
     text-align: left; padding: 0; }}
 QPushButton#tile:pressed {{ background: #14304a; border-color: {theme.ACCENT}; }}
-QLabel#tileCaption {{ color: {theme.MUTED}; font-size: 17px; font-weight: 600; }}
-QLabel#tileValue {{ font-size: 44px; font-weight: 700; }}
-QLabel#tileHint {{ color: {theme.SUBTLE}; font-size: 14px; }}
+QLabel#tileCaption {{ color: {theme.MUTED}; font-size: 19px; font-weight: 600; }}
+QLabel#tileValue {{ font-size: 50px; font-weight: 700; }}
+QLabel#tileHint {{ color: {theme.MUTED}; font-size: 16px; }}
 QLabel#touchTitle {{ font-size: 24px; font-weight: 800; letter-spacing: 4px; color: #ffffff; }}
 QLabel#pill {{ font-size: 15px; padding: 6px 16px; border-radius: 15px; }}
 QLabel#touchClock {{ color: {theme.TEXT}; font-size: 20px; font-weight: 600; }}
 QLabel#touchAlert {{ background: #3a1e22; color: #ffd0d3; border: 1px solid {theme.DANGER}; border-radius: 14px;
     padding: 12px 18px; font-size: 18px; font-weight: 600; }}
-QLabel#plotTitle {{ color: {theme.MUTED}; font-size: 16px; font-weight: 700; }}
+QLabel#plotLegend {{ font-size: 17px; font-weight: 700; }}
+QLabel#plotTitle {{ color: {theme.MUTED}; font-size: 17px; font-weight: 700; }}
 QWidget#plotCard {{ background: {theme.SURFACE}; border: 1px solid {theme.BORDER}; border-radius: 18px; }}
-QLabel#ovHead {{ color: {theme.MUTED}; font-size: 15px; font-weight: 700; }}
-QLabel#ovRow {{ color: {theme.MUTED}; font-size: 16px; }}
-QLabel#ovCell {{ color: {theme.TEXT}; font-size: 22px; font-weight: 700; }}
-QLabel#ovTotal {{ color: #ffffff; font-size: 22px; font-weight: 800; }}
-QLabel#kpiCaption {{ color: {theme.MUTED}; font-size: 14px; font-weight: 600; }}
-QLabel#kpiValue {{ font-size: 26px; font-weight: 700; }}
+QLabel#ovHead {{ color: {theme.MUTED}; font-size: 18px; font-weight: 700; }}
+QLabel#ovRow {{ color: {theme.MUTED}; font-size: 19px; }}
+QLabel#ovCell {{ color: {theme.TEXT}; font-size: 28px; font-weight: 700; }}
+QLabel#ovTotal {{ color: #ffffff; font-size: 28px; font-weight: 800; }}
+QLabel#kpiCaption {{ color: {theme.MUTED}; font-size: 16px; font-weight: 600; }}
+QLabel#kpiValue {{ font-size: 31px; font-weight: 700; }}
 QPushButton#touchButton {{ font-size: 18px; font-weight: 600; min-height: 60px; min-width: 64px;
     padding: 0 22px; border-radius: 14px; }}
-QPushButton#navTab {{ font-size: 17px; font-weight: 600; min-height: 64px; border-radius: 14px;
+QPushButton#navTab {{ font-size: 19px; font-weight: 600; min-height: 64px; border-radius: 14px;
     background: {theme.SURFACE}; color: {theme.MUTED}; }}
 QPushButton#navTab:checked {{ background: #12324a; border-color: {theme.ACCENT}; color: #ffffff; }}
 """
@@ -81,6 +82,18 @@ def _si(value: float, unit: str) -> str:
     if abs(value) >= 1000:
         return f"{_br(value / 1000, 2)} k{unit}"
     return f"{value:.0f} {unit}" if abs(value) >= 10 or value == 0 else f"{_br(value, 2)} {unit}"
+
+
+def _how(text: str, word: str) -> str:
+    """Valor da coluna Trifásico com o modo de cálculo em letra pequena ("média" ou "soma")."""
+    return f"{text} <span style='color:{theme.MUTED}; font-size:15px; font-weight:400'>{word}</span>"
+
+
+def _pf(value: float, reactive: float, suffix_px: int) -> str:
+    """FP com a natureza em letra menor ao lado: "0,900 Indut." (rich text)."""
+    nature = load_nature(reactive)
+    text = _br(value, 3)
+    return f"{text} <span style='font-size:{suffix_px}px'>{nature}</span>" if nature else text
 
 
 def _duration(seconds: float) -> str:
@@ -125,12 +138,14 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
     plot.setMenuEnabled(False)
     plot.setMouseEnabled(x=False, y=False)
     plot.hideButtons()
-    font = QFont("Segoe UI", 12)
+    font = QFont("Segoe UI", 14)
     for axis in ("left", "bottom"):
         item = plot.getAxis(axis)
         item.setPen(pg.mkPen(theme.BORDER))
         item.setTextPen(pg.mkPen(theme.MUTED))
         item.setTickFont(font)
+    plot.getAxis("left").setWidth(64)  # cabe "-200" na fonte grande (senão o rótulo some)
+    plot.getAxis("bottom").setHeight(34)
     if left:
         plot.setLabel("left", left, **{"color": theme.MUTED, "font-size": "13pt"})
     if bottom:
@@ -138,15 +153,23 @@ def _touch_plot(left: str = "", bottom: str = "") -> pg.PlotWidget:
     return plot
 
 
-def _plot_card(title: str, plot: pg.PlotWidget) -> tuple[QWidget, QLabel]:
+def _plot_card(title: str, plot: pg.PlotWidget, legend: str = "") -> tuple[QWidget, QLabel]:
+    """Card com título e, à direita, a legenda das fases (fora da área das curvas)."""
     card = QWidget()
     card.setObjectName("plotCard")
     card.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
     layout = QVBoxLayout(card)
     layout.setContentsMargins(16, 12, 16, 10)
+    head = QHBoxLayout()
     label = QLabel(title)
     label.setObjectName("plotTitle")
-    layout.addWidget(label)
+    head.addWidget(label)
+    head.addStretch(1)
+    if legend:
+        key = QLabel(theme.phase_legend(legend))
+        key.setObjectName("plotLegend")
+        head.addWidget(key)
+    layout.addLayout(head)
     layout.addWidget(plot, stretch=1)
     return card, label
 
@@ -270,8 +293,8 @@ class TouchPanel(QWidget):
         grid.setHorizontalSpacing(16)
         grid.setColumnStretch(0, 3)
         for column, name in enumerate(("A", "B", "C", "T"), start=1):
-            grid.setColumnStretch(column, 2)
-            head = QLabel("Total" if name == "T" else f"Fase {name}")
+            grid.setColumnStretch(column, 3 if name == "T" else 2)
+            head = QLabel("Trifásico" if name == "T" else f"Fase {name}")
             head.setObjectName("ovHead")
             head.setAlignment(Qt.AlignmentFlag.AlignRight)
             if name != "T":
@@ -318,16 +341,17 @@ class TouchPanel(QWidget):
         bottom = QHBoxLayout()
         bottom.setSpacing(12)
         self.ov_wave = _touch_plot()
-        self.ov_wave_curves = {p: self.ov_wave.plot(pen=pg.mkPen(theme.PHASE[p], width=2)) for p in "ABC"}
+        self.ov_wave_curves = {p: self.ov_wave.plot(pen=pg.mkPen(theme.PHASE[p], width=2), name=f"V{p.lower()}")
+                               for p in "ABC"}
         self.ov_phasor = _touch_plot()
         _phasor_axes(self.ov_phasor)
         self.ov_harmonic = _touch_plot()
         self.ov_harmonic.showGrid(x=False, y=True, alpha=0.15)
         # A forma de onda ganha mais largura; o diagrama fasorial é quadrado.
-        for title, plot, target, stretch in (("TENSÕES", self.ov_wave, WAVES, 4),
-                                             ("FASORES", self.ov_phasor, PHASORS, 3),
-                                             ("HARMÔNICAS", self.ov_harmonic, PHASORS, 3)):
-            card, _ = _plot_card(title, plot)
+        for title, plot, target, stretch, legend in (("TENSÕES", self.ov_wave, WAVES, 4, "V"),
+                                                     ("FASORES", self.ov_phasor, PHASORS, 3, ""),
+                                                     ("HARMÔNICAS", self.ov_harmonic, PHASORS, 3, "")):
+            card, _ = _plot_card(title, plot, legend)
             # Tocar num gráfico em miniatura abre a aba com ele em tamanho grande.
             plot.scene().sigMouseClicked.connect(lambda _event, page=target: self.show_page(page))
             bottom.addWidget(card, stretch=stretch)
@@ -341,11 +365,13 @@ class TouchPanel(QWidget):
         layout.setSpacing(12)
         self.wave_v = _touch_plot("V", "ms")
         self.wave_i = _touch_plot("A", "ms")
-        self.wave_v_curves = {p: self.wave_v.plot(pen=pg.mkPen(theme.PHASE[p], width=3)) for p in "ABC"}
-        self.wave_i_curves = {p: self.wave_i.plot(pen=pg.mkPen(theme.PHASE[p], width=3)) for p in "ABC"}
-        card, _ = _plot_card("TENSÕES", self.wave_v)
+        self.wave_v_curves = {p: self.wave_v.plot(pen=pg.mkPen(theme.PHASE[p], width=3), name=f"V{p.lower()}")
+                              for p in "ABC"}
+        self.wave_i_curves = {p: self.wave_i.plot(pen=pg.mkPen(theme.PHASE[p], width=3), name=f"I{p.lower()}")
+                              for p in "ABC"}
+        card, _ = _plot_card("TENSÕES", self.wave_v, "V")
         layout.addWidget(card, stretch=1)
-        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i)
+        card, self.wave_i_title = _plot_card("CORRENTES", self.wave_i, "I")
         layout.addWidget(card, stretch=1)
         return page
 
@@ -358,7 +384,7 @@ class TouchPanel(QWidget):
         _phasor_axes(self.phasor_plot)
         card, self.phasor_title = _plot_card("FASORES", self.phasor_plot)
         layout.addWidget(card, stretch=4)
-        self.harmonic_plot = _touch_plot("% da fundamental", "ordem")
+        self.harmonic_plot = _touch_plot("% da fundamental")
         self.harmonic_plot.showGrid(x=False, y=True, alpha=0.15)
         card, self.harmonic_title = _plot_card("HARMÔNICAS · TENSÃO FASE A", self.harmonic_plot)
         layout.addWidget(card, stretch=5)
@@ -375,7 +401,7 @@ class TouchPanel(QWidget):
         self.trend_p_curve = self.trend_p.plot(pen=pg.mkPen(theme.SUCCESS, width=3),
                                                fillLevel=0, brush=pg.mkBrush(79, 209, 139, 40))
         self.trend_d_curve = self.trend_p.plot(pen=pg.mkPen(theme.WARNING, width=3, style=Qt.PenStyle.DashLine))
-        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v)
+        card, _ = _plot_card("TENSÃO POR FASE", self.trend_v, "V")
         layout.addWidget(card, stretch=1)
         card, self.trend_p_title = _plot_card("POTÊNCIA ATIVA TOTAL  ·  DEMANDA 15 MIN (TRACEJADO)", self.trend_p)
         layout.addWidget(card, stretch=1)
@@ -462,8 +488,8 @@ class TouchPanel(QWidget):
         if total is not None:
             self.tiles["power"].set_value(_si(total.active_w, "W"), f"aparente {_si(total.apparent_va, 'VA')}")
             pf = total.power_factor
-            kind = "indutivo" if total.reactive_var > 1e-9 else "capacitivo" if total.reactive_var < -1e-9 else ""
-            self.tiles["pf"].set_value("---" if pf is None else _br(pf, 3), kind)
+            hint = {"Indut.": "carga indutiva", "Capac.": "carga capacitiva"}.get(load_nature(total.reactive_var), "")
+            self.tiles["pf"].set_value("---" if pf is None else _pf(pf, total.reactive_var, 28), hint)
             self.tiles["energy"].set_value("---" if stats is None else _si(stats.energy.active_wh, "Wh"),
                                            "" if stats is None else f"reativa {_si(stats.energy.reactive_varh, 'varh')}")
         else:
@@ -529,7 +555,7 @@ class TouchPanel(QWidget):
             return
         for phase in "ABC":
             cells[("v", phase)].setText(_br(result.rms[phase], 1))
-        cells[("v", "T")].setText(_br(sum(result.rms.values()) / 3, 1))
+        cells[("v", "T")].setText(_how(_br(sum(result.rms.values()) / 3, 1), "média"))
         cells[("v", "T")].setToolTip("Média das três fases")
         total = totals(result)
         if total is not None:
@@ -537,10 +563,12 @@ class TouchPanel(QWidget):
                 power = result.power[phase]
                 cells[("i", phase)].setText(_br(result.current_rms[phase], 2))
                 cells[("p", phase)].setText(_si(power.active_w, "W"))
-                cells[("pf", phase)].setText("---" if power.power_factor is None else _br(power.power_factor, 3))
-            cells[("i", "T")].setText(_br(sum(result.current_rms.values()) / 3, 2))
-            cells[("p", "T")].setText(_si(total.active_w, "W"))
-            cells[("pf", "T")].setText("---" if total.power_factor is None else _br(total.power_factor, 3))
+                cells[("pf", phase)].setText("---" if power.power_factor is None
+                                             else _pf(power.power_factor, power.reactive_fundamental_var, 17))
+            cells[("i", "T")].setText(_how(_br(sum(result.current_rms.values()) / 3, 2), "média"))
+            cells[("p", "T")].setText(_how(_si(total.active_w, "W"), "soma"))
+            cells[("pf", "T")].setText("---" if total.power_factor is None
+                                       else _pf(total.power_factor, total.reactive_var, 17))
         kpis["freq"].setText(f"{_br(result.frequency_hz, 2)} Hz")
         if result.thd_percent is not None:
             kpis["thd"].setText(f"{_br(result.thd_percent, 1)} %")
@@ -604,8 +632,8 @@ def _rising_edge(t: np.ndarray, values: np.ndarray, span: float) -> int:
 
 def _phasor_axes(plot: pg.PlotWidget) -> None:
     plot.setAspectLocked(True)
-    plot.getAxis("left").setStyle(showValues=False)
-    plot.getAxis("bottom").setStyle(showValues=False)
+    plot.hideAxis("left")
+    plot.hideAxis("bottom")
 
 
 def _draw_waves(data: PanelData, curves_v, plot_v, curves_i=None, plot_i=None) -> None:
@@ -623,12 +651,15 @@ def _draw_waves(data: PanelData, curves_v, plot_v, curves_i=None, plot_i=None) -
     for i, phase in enumerate("ABC"):
         curves_v[phase].setData(x, v[keep, i])
     plot_v.setXRange(0, span * 1000, padding=0)
+    _symmetric(plot_v, v[keep])
     if curves_i is not None:
         currents = data.currents
         has_i = currents is not None and currents.shape == v.shape
         for i, phase in enumerate("ABC"):
             curves_i[phase].setData(x if has_i else [], currents[keep, i] if has_i else [])
         plot_i.setXRange(0, span * 1000, padding=0)
+        if has_i:
+            _symmetric(plot_i, currents[keep])
 
 
 def _draw_phasors(plot: pg.PlotWidget, result: Measurement | None, labels: bool = True) -> bool:
@@ -649,16 +680,13 @@ def _draw_phasors(plot: pg.PlotWidget, result: Measurement | None, labels: bool 
         v = result.phasors[phase] * reference
         plot.plot([0, v.real], [0, v.imag], pen=pg.mkPen(color, width=5 if labels else 3),
                   symbol="o", symbolSize=10 if labels else 6, symbolBrush=color, symbolPen=None)
-        if labels:
-            tag = pg.TextItem(f"V{phase}", color=color, anchor=(0.5, 0.5))
-            tag.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
-            tag.setPos(v.real * 1.15, v.imag * 1.15)
-            plot.addItem(tag)
+        _tag(plot, f"V{phase.lower()}", color, v * 1.16, 14 if labels else 11)
         if i_scale is not None:
             current = result.current_phasors[phase] * reference * i_scale
             plot.plot([0, current.real], [0, current.imag],
                       pen=pg.mkPen(color, width=3 if labels else 2, style=Qt.PenStyle.DashLine))
-    limit = radius * (1.3 if labels else 1.1)
+            _tag(plot, f"I{phase.lower()}", color, current * 1.22, 13 if labels else 10)
+    limit = radius * 1.3
     plot.setXRange(-limit, limit, padding=0)
     plot.setYRange(-limit, limit, padding=0)
     return i_scale is not None
@@ -675,6 +703,7 @@ def _draw_harmonics(plot: pg.PlotWidget, result: Measurement | None) -> float | 
     plot.addItem(pg.BarGraphItem(x=orders, height=heights, width=0.6,
                                  brush=theme.WARNING if over else theme.ACCENT, pen=None))
     plot.setXRange(1.4, orders[-1] + 0.6, padding=0)
+    plot.getAxis("bottom").setTicks([[(int(k), str(k)) for k in orders if k % 2]])  # ímpares: as relevantes
     plot.setYRange(0, max(5.0, float(heights.max()) * 1.3), padding=0)
     return result.thd_percent
 
@@ -692,3 +721,18 @@ def _draw_power_trend(plot: pg.PlotWidget, p_curve, d_curve, stats: MeterStats |
     p_curve.setData(x, power, connect="finite")
     d_curve.setData(x, demand, connect="finite")
     plot.setXRange(min(x[0], -1.0), 0.0, padding=0.01)
+
+
+def _symmetric(plot: pg.PlotWidget, values: np.ndarray) -> None:
+    """Eixo vertical simétrico em torno do zero, com folga de 15 % sobre o pico."""
+    peak = float(np.abs(values).max()) if values.size else 0.0
+    if peak > 0:
+        plot.setYRange(-1.15 * peak, 1.15 * peak, padding=0)
+
+
+def _tag(plot: pg.PlotWidget, text: str, color: str, position: complex, size: int) -> None:
+    """Rótulo na ponta de um fasor."""
+    tag = pg.TextItem(text, color=color, anchor=(0.5, 0.5))
+    tag.setFont(QFont("Segoe UI", size, QFont.Weight.Bold))
+    tag.setPos(position.real, position.imag)
+    plot.addItem(tag)

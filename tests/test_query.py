@@ -92,3 +92,11 @@ def test_contador_de_energia_integra_e_ressincroniza():
     assert counter.seconds == pytest.approx(0.5)
     counter.reset()
     assert counter.active_wh == 0 and counter.seconds == 0
+
+
+def test_natureza_da_carga_pelo_sinal_de_q():
+    from prisma.core.measurement import load_nature
+
+    assert load_nature(276.8) == "Indut."
+    assert load_nature(-50.0) == "Capac."
+    assert load_nature(0.0) == ""

@@ -7,9 +7,12 @@
 - Guia de integração elétrica e procedimentos de alimentação, aquisição por sensores isolados, tela e bateria.
 - Credenciais do gateway excluídas do versionamento por `.gitignore`.
 - Instrumentação no formato de multimedidor: quadro V, I, P, Q, S, FP (ind/cap) e ângulo por fase + trifásico; frequência, THD e energia ativa/reativa acumuladas (kWh/kvarh, botão Zerar).
-- Card "Qualidade da tensão" enxuto (tensões de linha, desequilíbrio, sequência, THD); removidos fator de crista, componentes +/−/0, origem, calibração e versão da lateral.
-- Novo ícone do PRISMA: luz entra no prisma e sai como as três formas de onda das fases, com a estrela de fasores e `prisma.ico` com 16–256 px.
-- Painel touch como medidor inteligente: abas Visão geral (tela inicial: valores, indicadores, formas de onda, fasores e harmônicas numa tela só), Valores, Formas de onda, Fasores e harmônicas, Energia e demanda e Tendências; relógio, energia importada/exportada/reativa, demanda de 15 min e máxima, mín/máx por fase. Sequência inversa vira alerta.
+- Instrumentação em duas faixas para caber em 1360×720: tensão de linha no quadro de medições, desequilíbrio e sequência como indicadores, aviso só quando há problema; removidos fator de crista, componentes +/−/0, origem, calibração, versão e destaque do nome da placa.
+- Novo ícone: mostrador de medidor com as três fases em arco e uma forma de onda; `prisma.ico` com 16–256 px.
+- Painel touch como medidor inteligente (abre no monitor pedido com `--screen`, fontes maiores): abas Visão geral (tela inicial: valores, indicadores, formas de onda, fasores e harmônicas numa tela só), Valores, Formas de onda, Fasores e harmônicas, Energia e demanda e Tendências; relógio, energia importada/exportada/reativa, demanda de 15 min e máxima, mín/máx por fase. Sequência inversa vira alerta.
+- Gráficos com Va/Vb/Vc e Ia/Ib/Ic (legenda no título e rótulo na ponta dos fasores); FP com a natureza da carga (Indut./Capac.); coluna Trifásico indica "média" (V, I) ou "soma" (P, Q, S).
+- Fasores com a fase A como referência (0°) por padrão e correntes Ia/Ib/Ic tracejadas no diagrama, na janela principal e no painel.
+- README e banner atualizados com a identidade nova e o painel touch.
 - Voz (perguntas, microfone e fala) retirada do painel por enquanto; `prisma.core.query`/`speech` e `ui/microphone.py` continuam no código para retomar depois.
 - **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
 

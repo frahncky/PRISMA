@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 
 from prisma import __version__
 from prisma.core.measurement import (LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
-                                     line_voltages, sequence_components)
+                                     sequence_components)
 from prisma.core.protocol import Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
@@ -58,6 +58,21 @@ int main(void)
 """
 
 STYLE = theme.STYLE
+
+
+class NoticeLabel(QLabel):
+    """Aviso que só aparece quando há texto (sinal ausente, análise indisponível…)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("notice")
+        self.setTextFormat(Qt.TextFormat.RichText)
+        self.setWordWrap(True)
+        self.hide()
+
+    def setText(self, text: str) -> None:  # noqa: N802 (API do Qt)
+        super().setText(text)
+        self.setVisible(bool(text))
 
 
 class MainWindow(FeaturesMixin, QMainWindow):
@@ -204,17 +219,24 @@ class MainWindow(FeaturesMixin, QMainWindow):
         for axis in ("left", "bottom"):
             plot.getAxis(axis).setPen(pg.mkPen(theme.BORDER))
             plot.getAxis(axis).setTextPen(pg.mkPen(theme.MUTED))
+            plot.getAxis(axis).setTickFont(QFont("Segoe UI", 9))
+        plot.getAxis("left").setWidth(52)
         plot.setMenuEnabled(False)
         return plot
 
     @staticmethod
-    def _wrap(widget: QWidget) -> QFrame:
+    def _titled(title: str, widget: QWidget) -> tuple[QFrame, QLabel]:
+        """Card com título no mesmo estilo do osciloscópio."""
         frame = QFrame()
         frame.setObjectName("card")
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(6, 6, 6, 6)
-        layout.addWidget(widget)
-        return frame
+        layout.setContentsMargins(10, 8, 10, 8)
+        label = QLabel(title)
+        label.setObjectName("panelTitle")
+        label.setMinimumHeight(28)
+        layout.addWidget(label)
+        layout.addWidget(widget, stretch=1)
+        return frame, label
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -250,15 +272,13 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._nav_layout.setSpacing(2)
         side.addLayout(self._nav_layout)
         side.addStretch(1)
-        section = QLabel("DISPOSITIVO")
-        section.setObjectName("railSection")
-        side.addWidget(section)
-        self.board_label = QLabel("DEMOEM · MCF51EM256")
-        self.board_label.setWordWrap(True)
-        self.board_label.setStyleSheet(f"color: {theme.TEXT}; font-weight: 600;")
-        side.addWidget(self.board_label)
         self.hw_status = QLabel()
         side.addWidget(self.hw_status)
+        self.board_label = QLabel("DEMOEM · MCF51EM256")
+        self.board_label.setWordWrap(True)
+        self.board_label.setObjectName("brandSub")
+        self.board_label.setStyleSheet(f"color: {theme.SUBTLE}; font-weight: 400; letter-spacing: 0;")
+        side.addWidget(self.board_label)
         self._set_link_status("Serial desconectada", theme.SUBTLE)
         outer.addWidget(rail)
 
@@ -347,21 +367,24 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.tabs.currentChanged.connect(self._sync_nav)
         content.addWidget(self.tabs, stretch=1)
 
-        # Página de instrumentação.
+        # Página de instrumentação: medições + indicadores em cima, gráficos embaixo.
+        # Duas faixas (e não três) para caber em telas de 720 px de altura.
         dashboard = QWidget()
         dash = QVBoxLayout(dashboard)
-        dash.setContentsMargins(20, 16, 20, 12)
+        dash.setContentsMargins(20, 14, 20, 12)
         dash.setSpacing(12)
+        self.details = NoticeLabel()
+        dash.addWidget(self.details)
         metrics = QHBoxLayout()
         metrics.setSpacing(12)
         self.meter = MeterTable()
         self.metric_labels = self.meter.voltage_labels
         metrics.addWidget(self.meter, stretch=3)
         kpis = QGridLayout()
-        kpis.setSpacing(12)
+        kpis.setSpacing(10)
         card, self.frequency_label, self.frequency_hint = self._card("Frequência", theme.ACCENT, "fundamental")
         kpis.addWidget(card, 0, 0)
-        card, self.thd_label, self.thd_hint = self._card("THD tensão · fase A", hint="h2 a h15")
+        card, self.thd_label, self.thd_hint = self._card("THD tensão · fase A", hint="h2–h15")
         kpis.addWidget(card, 0, 1)
         reset = QPushButton("Zerar")
         reset.setObjectName("ghost")
@@ -372,6 +395,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
         kpis.addWidget(card, 1, 0)
         card, self.reactive_energy_label, _ = self._card("Energia reativa", hint="fundamental")
         kpis.addWidget(card, 1, 1)
+        card, self.unbalance_label, self.unbalance_hint = self._card(
+            "Desequilíbrio de tensão", hint=f"limite {LIMIT_UNBALANCE_PERCENT:.0f} % (PRODIST)")
+        kpis.addWidget(card, 2, 0)
+        card, self.sequence_label, self.sequence_hint = self._card("Sequência de fases", hint="")
+        kpis.addWidget(card, 2, 1)
         metrics.addLayout(kpis, stretch=2)
         dash.addLayout(metrics)
 
@@ -379,7 +407,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.wave.setLabel("left", "Tensão", units="V")
         self.wave.setLabel("bottom", "Tempo", units="s")
         self.curves = {
-            phase: self.wave.plot(pen=pg.mkPen(theme.PHASE[phase], width=2), name=f"Fase {phase}")
+            phase: self.wave.plot(pen=pg.mkPen(theme.PHASE[phase], width=2), name=f"V{phase.lower()}")
             for phase in ("A", "B", "C")
         }
         scope_card = QFrame()
@@ -390,6 +418,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
         scope_title = QLabel("OSCILOSCÓPIO")
         scope_title.setObjectName("panelTitle")
         scope_head.addWidget(scope_title)
+        scope_head.addSpacing(14)
+        scope_legend = QLabel(theme.phase_legend("V"))
+        scope_legend.setStyleSheet("font-weight: 700;")
+        scope_head.addWidget(scope_legend)
         scope_head.addStretch(1)
         self.trigger_check = QCheckBox("Disparo")
         self.trigger_check.setChecked(True)
@@ -403,42 +435,28 @@ class MainWindow(FeaturesMixin, QMainWindow):
         scope_head.addWidget(self.cycles_combo)
         scope_layout.addLayout(scope_head)
         self.wave.setTitle(None)
-        self.wave.setMinimumHeight(200)
+        self.wave.setMinimumHeight(160)
         scope_layout.addWidget(self.wave)
-        dash.addWidget(scope_card, stretch=11)
 
-        bottom = QHBoxLayout()
-        bottom.setSpacing(12)
-        self.phasor = self._plot("Fasores")
-        self.phasor.setLabel("left", "Imaginário", units="V")
-        self.phasor.setLabel("bottom", "Real", units="V")
+        self.phasor = self._plot("")
+        self.phasor.setTitle(None)
         self.phasor.setAspectLocked(True)
-        self.phasor.setXRange(-160, 160, padding=0)
-        self.phasor.setYRange(-160, 160, padding=0)
-        self.harmonics = self._plot("Harmônicas · fase A")
-        self.harmonics.setLabel("left", "% da fundamental")
-        self.harmonics.setLabel("bottom", "Ordem")
+        self.phasor.getAxis("left").setStyle(showValues=False)
+        self.phasor.getAxis("bottom").setStyle(showValues=False)
+        self.phasor.setXRange(-185, 185, padding=0)
+        self.phasor.setYRange(-185, 185, padding=0)
+        self.harmonics = self._plot("")
+        self.harmonics.setTitle(None)
         self.harmonics.showGrid(x=False, y=True, alpha=0.12)
         self.harmonics.setXRange(1.5, 15.5, padding=0)
-        details_card = QFrame()
-        details_card.setObjectName("card")
-        details_layout = QVBoxLayout(details_card)
-        details_layout.setContentsMargins(16, 12, 16, 12)
-        details_title = QLabel("QUALIDADE DA TENSÃO")
-        details_title.setObjectName("panelTitle")
-        details_layout.addWidget(details_title)
-        self.details = QLabel("Aguardando amostras…")
-        self.details.setObjectName("muted")
-        self.details.setTextFormat(Qt.TextFormat.RichText)
-        self.details.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.details.setWordWrap(True)
-        details_layout.addWidget(self.details, stretch=1)
-        bottom.addWidget(self._wrap(self.phasor), stretch=4)
-        bottom.addWidget(self._wrap(self.harmonics), stretch=5)
-        bottom.addWidget(details_card, stretch=4)
-        for widget in (bottom.itemAt(i).widget() for i in range(bottom.count())):
-            widget.setMaximumHeight(250)
-        dash.addLayout(bottom, stretch=9)
+        charts = QHBoxLayout()
+        charts.setSpacing(12)
+        charts.addWidget(scope_card, stretch=5)
+        card, self.phasor_title = self._titled("FASORES", self.phasor)
+        charts.addWidget(card, stretch=3)
+        card, self.harmonics_title = self._titled("HARMÔNICAS · FASE A (%)", self.harmonics)
+        charts.addWidget(card, stretch=3)
+        dash.addLayout(charts, stretch=1)
         self.tabs.addTab(dashboard, "Instrumentação")
 
         # Página do editor de firmware.
@@ -668,8 +686,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if self.raw_counts:
             self.raw_counts = False
             self._apply_units()
-            self.phasor.setXRange(-160, 160, padding=0)
-            self.phasor.setYRange(-160, 160, padding=0)
+            self.phasor.setXRange(-185, 185, padding=0)
+            self.phasor.setYRange(-185, 185, padding=0)
         self._log("Modo demonstração ativado. Dados não provêm da placa.")
 
     def _tick(self) -> None:
@@ -740,6 +758,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
             self.last_analysis = None
             self.frequency_label.setText("—")
             self.thd_label.setText("—")
+            self.unbalance_label.setText("—")
+            self.sequence_label.setText("—")
+            self.sequence_hint.setText("")
             self.power_view.clearContents()
             self.meter.clear()
             self.phasor.clear()
@@ -784,9 +805,24 @@ class MainWindow(FeaturesMixin, QMainWindow):
             item.sigPointsClicked.connect(lambda item, points, event, p=phase: self._select_phasor(p))
             if self.selected_phase == phase:
                 self.selected_phasor.setText(f"Fase {phase}: {abs(ph):.3f} V ∠ {_degrees(ph, 2)}°")
-            tag = pg.TextItem(phase, color=COLORS[phase], anchor=(0.5, 0.5))
-            tag.setPos(ph.real * 1.13, ph.imag * 1.13)
+            tag = pg.TextItem(f"V{phase.lower()}", color=COLORS[phase], anchor=(0.5, 0.5))
+            tag.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
+            tag.setPos(ph.real * 1.25, ph.imag * 1.25)
             self.phasor.addItem(tag)
+        # Correntes tracejadas, em escala (65 % do maior fasor de tensão): o que importa é o ângulo.
+        v_peak = max(abs(p) for p in result.phasors.values())
+        i_peak = max((abs(p) for p in result.current_phasors.values()), default=0.0)
+        if i_peak > 1e-12:
+            scale = 0.65 * v_peak / i_peak
+            for phase in ("A", "B", "C"):
+                current = result.current_phasors[phase] * rotation * scale
+                self.phasor.plot([0, current.real], [0, current.imag],
+                                 pen=pg.mkPen(COLORS[phase], width=2, style=Qt.PenStyle.DashLine))
+                tag = pg.TextItem(f"I{phase.lower()}", color=COLORS[phase], anchor=(0.5, 0.5))
+                tag.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                tag.setPos(current.real * 1.3, current.imag * 1.3)
+                self.phasor.addItem(tag)
+        self.phasor_title.setText("FASORES · V (cheio) e I (tracejado)" if i_peak > 1e-12 else "FASORES DE TENSÃO")
         self.harmonics.clear()
         heights = np.array(result.harmonic_percent[1:])
         last_harmonic = len(result.harmonic_percent)
@@ -796,18 +832,16 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 width=0.6, brush=theme.ACCENT, pen=pg.mkPen(None)
             ))
             self.harmonics.setYRange(0, max(5, float(heights.max()) * 1.4), padding=0)
-            self.harmonics.setTitle(f"Harmônicas · fase A · h2–h{last_harmonic}", color=theme.MUTED, size="10pt")
+            self.harmonics_title.setText(f"HARMÔNICAS · FASE A (%) · h2–h{last_harmonic}")
             self.thd_label.setText(f"{result.thd_percent:.1f} %")
             over = result.thd_percent > LIMIT_THD_PERCENT
             self.thd_label.setStyleSheet(f"color:{theme.WARNING}" if over else "")
-            self.thd_hint.setText(f"h2 a h{last_harmonic}" + (f" · acima de {LIMIT_THD_PERCENT:.0f} % (PRODIST)" if over else ""))
-            thd = result.thd_percent
-            thd_text = f"{thd:.2f} % (h2–h{last_harmonic})"
+            self.thd_hint.setText(f"h2–h{last_harmonic}" + (f" · acima de {LIMIT_THD_PERCENT:.0f} % (PRODIST)" if over else ""))
         else:
-            self.harmonics.setTitle("Harmônicas · taxa insuficiente", color=theme.MUTED, size="10pt")
+            self.harmonics_title.setText("HARMÔNICAS · taxa insuficiente")
             self.thd_label.setText("—")
             self.harmonics.setYRange(0, 5, padding=0)
-            thd_text = "THD indisponível (taxa insuficiente)"
+            self.thd_hint.setText("THD indisponível (taxa insuficiente)")
         self.meter.show_result(result, rotation, self._pin_volts())
         self._show_energy(result, float(t[-1]))
         self.power_view.clearContents()
@@ -817,22 +851,15 @@ class MainWindow(FeaturesMixin, QMainWindow):
                 f"{power.power_factor:.4f}" if power.power_factor is not None else "---"]
             for column, value in enumerate(cells):
                 self.power_view.setItem(row, column, QTableWidgetItem(value))
-        volt = "{:.3f} V" if self._pin_volts() else "{:.1f} V"
-        rows = [(f"Tensão de linha {name}", volt.format(abs(v))) for name, v in line_voltages(result.phasors).items()]
         seq = sequence_components(result.phasors)
-        if seq.unbalance_percent is not None:
-            unb = f"{seq.unbalance_percent:.1f} %"
-            if seq.unbalance_percent > LIMIT_UNBALANCE_PERCENT:
-                unb = f"<span style='color:{theme.WARNING}'>⚠ {unb} (limite {LIMIT_UNBALANCE_PERCENT:.0f} %)</span>"
-            rows.append(("Desequilíbrio", unb))
-            order = {"ABC": "ABC · direta", "ACB": f"<span style='color:{theme.WARNING}'>⚠ ACB · inversa</span>"}
-            rows.append(("Sequência de fases", order.get(seq.rotation, "indefinida")))
-        rows.append(("THD tensão · fase A", thd_text))
-        self.details.setText(
-            "<table width='100%' cellspacing='0' cellpadding='4'>"
-            + "".join(f"<tr><td style='color:{theme.MUTED}'>{k}</td>"
-                      f"<td align='right' style='color:{theme.TEXT}; font-weight:600'>{v}</td></tr>" for k, v in rows)
-            + "</table>")
+        unbalance = seq.unbalance_percent
+        over = unbalance is not None and unbalance > LIMIT_UNBALANCE_PERCENT
+        self.unbalance_label.setText("—" if unbalance is None else f"{unbalance:.1f} %")
+        self.unbalance_label.setStyleSheet(f"color:{theme.WARNING}" if over else "")
+        self.sequence_label.setText(seq.rotation or "—")
+        self.sequence_label.setStyleSheet(f"color:{theme.WARNING}" if seq.rotation == "ACB" else "")
+        self.sequence_hint.setText({"ABC": "direta", "ACB": "⚠ inversa"}.get(seq.rotation or "", "indefinida"))
+        self.details.setText("")
         self.record_trend(result)
         self.last_analysis = (result, self.mode,
             json.dumps({"name": self.calibration.name, "channels": self.calibration.channels}, ensure_ascii=False),
@@ -897,8 +924,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
             if widget is current and hasattr(self, "page_title"):
                 self.page_title.setText(button.property("title"))
 
-    def open_touch_panel(self, fullscreen: bool = True):
-        """Abre o painel touch (medidor inteligente em tela cheia) sobre a medição atual."""
+    def open_touch_panel(self, fullscreen: bool = True, screen=None):
+        """Abre o painel touch (medidor inteligente em tela cheia) sobre a medição atual.
+
+        ``screen`` fixa o monitor; sem ele, usa o da janela principal.
+        """
         from prisma.ui.touch_panel import PanelData, TouchPanel
 
         def data() -> PanelData:
@@ -911,9 +941,11 @@ class MainWindow(FeaturesMixin, QMainWindow):
             panel = TouchPanel(data, self)
             panel.setWindowIcon(self.windowIcon())
             self.touch_panel = panel
-        if self.screen() is not None:
-            panel.setScreen(self.screen())
-            panel.move(self.screen().geometry().topLeft())
+        screen = screen or self.screen()
+        if screen is not None:
+            # Posiciona antes de mostrar: em tela cheia o Windows usa o monitor onde a janela está.
+            panel.setScreen(screen)
+            panel.setGeometry(screen.availableGeometry())
         panel.showFullScreen() if fullscreen else panel.show()
         panel.raise_()
         panel.activateWindow()

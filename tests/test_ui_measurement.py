@@ -27,11 +27,13 @@ def test_demo_exibe_quinze_harmonicas(window):
     for _ in range(6):
         window._generate_demo_batch()
     window._draw_signals()
-    assert "h2–h15" in window.details.text()
+    assert window.thd_hint.text() == "h2–h15"
+    assert window.details.isHidden()  # sem aviso quando a análise é válida
     assert "---" not in window.metric_labels["A"].text()
-    assert window.meter.cells[("pf", "T")].text() == "0.900 ind"
-    assert window.meter.cells[("p", "T")].text().endswith("kW")
-    assert "Tensão de linha AB" in window.details.text()
+    assert window.meter.cells[("pf", "T")].text() == "0.900 Indut."
+    assert "kW" in window.meter.cells[("p", "T")].text() and "soma" in window.meter.cells[("p", "T")].text()
+    assert abs(float(window.meter.cells[("vl", "A")].text().split()[0]) - 127 * 3 ** 0.5) < 1  # 127 V × √3
+    assert window.sequence_label.text() == "ABC"
 
 
 @pytest.mark.parametrize("sample_rate, expected", [
@@ -52,7 +54,7 @@ def test_serial_adapta_analise_a_taxa(window, sample_rate, expected):
         )
         window.buffer.add(Sample(float(t), *map(float, values)))
     window._draw_signals()
-    assert expected in window.details.text()
+    assert expected in window.details.text() + window.thd_hint.text()
     if sample_rate == 100:
         assert all(label.text() == "--- V" for label in window.metric_labels.values())
 
@@ -376,3 +378,15 @@ def test_trend_records_and_clears(window):
     assert len(window.trend) == 1
     window.clear_trend()
     assert not window.trend
+
+
+def test_fasores_usam_fase_a_como_referencia_por_padrao(window):
+    assert window.phasor_reference.currentText() == "Fase A"
+    for _ in range(6):
+        window._generate_demo_batch()
+    window._draw_signals()
+    assert window.meter.cells[("ang", "A")].text() == "0.0°"
+    assert window.meter.cells[("ang", "B")].text() in ("-120.0°", "-119.9°", "-120.1°")
+    labels = {item.toPlainText() for item in window.phasor.getPlotItem().items if hasattr(item, "toPlainText")}
+    assert {"Va", "Vb", "Vc", "Ia", "Ib", "Ic"} <= labels  # correntes também no diagrama
+    assert "I (tracejado)" in window.phasor_title.text()

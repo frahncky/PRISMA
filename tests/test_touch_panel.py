@@ -37,8 +37,8 @@ def test_resumo_mostra_valores_de_medidor(app):
     assert panel.tiles["vA"].value.text() == "127,0 V"
     assert panel.tiles["iB"].value.text() == "5,00 A"
     assert panel.tiles["freq"].value.text() == "60,00 Hz"
-    assert panel.tiles["pf"].value.text() == "0,900"
-    assert panel.tiles["pf"].hint.text() == "indutivo"
+    assert panel.tiles["pf"].value.text().startswith("0,900") and "Indut." in panel.tiles["pf"].value.text()
+    assert panel.tiles["pf"].hint.text() == "carga indutiva"
     assert panel.tiles["power"].value.text().endswith("kW")
     assert panel.tiles["energy"].value.text() == "---"  # sem contadores
     assert panel.mode_label.text() == "Demonstração"
@@ -98,8 +98,9 @@ def test_visao_geral_mostra_valores_e_graficos(app):
     assert PAGES[ALL] == "Visão geral" and panel.pages.currentIndex() == ALL
     assert panel.ov_cells[("v", "A")].text() == "127,0"
     assert panel.ov_cells[("i", "B")].text() == "5,00"
-    assert panel.ov_cells[("pf", "T")].text() == "0,900"
-    assert panel.ov_cells[("p", "T")].text().endswith("kW")
+    assert panel.ov_cells[("pf", "T")].text().startswith("0,900") and "Indut." in panel.ov_cells[("pf", "T")].text()
+    assert "kW" in panel.ov_cells[("p", "T")].text() and "soma" in panel.ov_cells[("p", "T")].text()
+    assert "média" in panel.ov_cells[("v", "T")].text()
     assert panel.ov_kpis["freq"].text() == "60,00 Hz"
     assert panel.ov_kpis["energy"].text() == "1,71 kWh"
     assert panel.ov_kpis["demand_max"].text() == "1,71 kW"

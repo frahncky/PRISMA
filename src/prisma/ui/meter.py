@@ -7,7 +7,7 @@ import numpy as np
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout
 
-from prisma.core.measurement import Measurement, totals
+from prisma.core.measurement import Measurement, line_voltages, load_nature, totals
 from prisma.ui import theme
 
 PHASES = ("A", "B", "C")
@@ -15,6 +15,7 @@ COLUMNS = PHASES + ("T",)
 # (chave, rótulo); a unidade vai em cada célula, com prefixo SI quando couber.
 ROWS = (
     ("v", "Tensão"),
+    ("vl", "Tensão de linha"),
     ("i", "Corrente"),
     ("p", "Potência ativa"),
     ("q", "Potência reativa"),
@@ -78,6 +79,9 @@ class MeterTable(QFrame):
                 grid.addWidget(cell, row, column)
                 self.cells[(key, name)] = cell
         self.cells[("v", "T")].setToolTip("Média das três fases")
+        for name, pair in zip(PHASES, ("AB", "BC", "CA")):
+            self.cells[("vl", name)].setToolTip(f"Tensão de linha {pair}")
+        self.cells[("vl", "T")].setToolTip("Média das tensões de linha")
         self.cells[("i", "T")].setToolTip("Média das três fases")
         self.cells[("pf", "T")].setToolTip("FP trifásico = P total / S total")
         outer.addLayout(grid)
@@ -101,7 +105,11 @@ class MeterTable(QFrame):
         for phase in PHASES:
             self.cells[("v", phase)].setText(volt.format(result.rms[phase]))
             self.cells[("ang", phase)].setText(f"{degrees(result.phasors[phase] * rotation)}°")
-        self.cells[("v", "T")].setText(volt.format(sum(result.rms.values()) / 3))
+        self.cells[("v", "T")].setText(_how(volt.format(sum(result.rms.values()) / 3), "média"))
+        lines = [abs(v) for v in line_voltages(result.phasors).values()]
+        for phase, value in zip(PHASES, lines):
+            self.cells[("vl", phase)].setText(volt.format(value))
+        self.cells[("vl", "T")].setText(_how(volt.format(sum(lines) / 3), "média"))
         total = totals(result)
         if total is None:
             for key in ("i", "p", "q", "s", "pf"):
@@ -116,16 +124,20 @@ class MeterTable(QFrame):
             self.cells[("q", phase)].setText(si(power.reactive_fundamental_var, "var"))
             self.cells[("s", phase)].setText(si(power.apparent_va, "VA"))
             self.cells[("pf", phase)].setText(_pf(power.power_factor, power.reactive_fundamental_var))
-        self.cells[("i", "T")].setText(f"{sum(result.current_rms.values()) / 3:.3f} {amp_unit}")
-        self.cells[("p", "T")].setText(si(total.active_w, "W"))
-        self.cells[("q", "T")].setText(si(total.reactive_var, "var"))
-        self.cells[("s", "T")].setText(si(total.apparent_va, "VA"))
+        self.cells[("i", "T")].setText(_how(f"{sum(result.current_rms.values()) / 3:.3f} {amp_unit}", "média"))
+        self.cells[("p", "T")].setText(_how(si(total.active_w, "W"), "soma"))
+        self.cells[("q", "T")].setText(_how(si(total.reactive_var, "var"), "soma"))
+        self.cells[("s", "T")].setText(_how(si(total.apparent_va, "VA"), "soma"))
         self.cells[("pf", "T")].setText(_pf(total.power_factor, total.reactive_var))
 
 
+def _how(text: str, word: str) -> str:
+    """Valor da coluna Trifásico com o modo de cálculo em letra pequena ("média" ou "soma")."""
+    return f"{text} <span style='color:{theme.SUBTLE}; font-size:11px; font-weight:400'>{word}</span>"
+
+
 def _pf(value: float | None, reactive: float) -> str:
-    """FP com a natureza da carga, como nos medidores: ind. (Q > 0) ou cap. (Q < 0)."""
+    """FP com a natureza da carga, como nos medidores: 0.900 Indut. / 0.950 Capac."""
     if value is None:
         return EMPTY
-    kind = " ind" if reactive > 1e-9 else " cap" if reactive < -1e-9 else ""
-    return f"{value:.3f}{kind}"
+    return f"{value:.3f} {load_nature(reactive)}".rstrip()

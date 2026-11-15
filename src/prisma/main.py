@@ -51,6 +51,7 @@ def main(argv: list[str] | None = None) -> None:
         port = None
 
     screens = app.screens()
+    target = None
     screen_index = args.screen if args.screen is not None else int(settings.value("last_screen", 1))
     if 1 <= screen_index <= len(screens):
         target = screens[screen_index - 1]
@@ -60,7 +61,7 @@ def main(argv: list[str] | None = None) -> None:
     if port and (args.connect or args.last):
         window.connect_serial()
     if args.painel:
-        window.open_touch_panel()
+        window.open_touch_panel(screen=target)
     code = app.exec()
     current = window.screen()
     if current in screens:

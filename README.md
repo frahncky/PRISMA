@@ -1,11 +1,11 @@
 <div align="center">
 
-<img src="docs/images/banner.svg" alt="PRISMA — Programar. Medir. Analisar." width="100%">
+<img src="docs/images/banner.svg" alt="PRISMA — Analisador de energia trifásico" width="100%">
 
 ### Plataforma de Registro, Instrumentação, Sinais, Medição e Análise
 
-Osciloscópio, RMS, fasores, harmônicas e potências trifásicas em um app desktop em português,<br>
-ligado por serial à placa **DEMOEM / ColdFire MCF51EM256**.
+Analisador de energia trifásico em português: tensões, correntes, potências, FP, energia, demanda,<br>
+formas de onda, fasores e harmônicas, ligado por serial à placa **DEMOEM / ColdFire MCF51EM256**.
 
 [![Testes PRISMA](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml/badge.svg)](https://github.com/frahncky/PRISMA/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
@@ -22,7 +22,7 @@ ligado por serial à placa **DEMOEM / ColdFire MCF51EM256**.
 
 <br>
 
-<img src="docs/images/prisma-demo.png" alt="Interface do PRISMA em modo demonstração, com tensões RMS, osciloscópio trifásico, fasores e harmônicas" width="92%">
+<img src="docs/images/prisma-demo.png" alt="Interface do PRISMA em modo demonstração: quadro de medições por fase e trifásico, frequência, THD, energia, desequilíbrio, osciloscópio, fasores e harmônicas" width="92%">
 
 <sub>Captura real do aplicativo em modo demonstração · sinais sintéticos</sub>
 
@@ -50,6 +50,7 @@ Com a placa:
 ```powershell
 .\.venv\Scripts\python.exe -m prisma --port COM4 --profile examples\profiles\demoem-ch340.json --connect
 .\.venv\Scripts\python.exe -m prisma --last          # reusa a última porta, perfil e monitor
+.\.venv\Scripts\python.exe -m prisma --painel --screen 2   # painel touch em tela cheia no 2º monitor (ou F10)
 .\scripts\criar_atalho.ps1                             # atalho "PRISMA" na área de trabalho
 ```
 
@@ -58,12 +59,12 @@ Com a placa:
 <table>
   <tr>
     <td width="33%" valign="top">
-      <h3>📈 Instrumentos</h3>
-      Osciloscópio trifásico, RMS por fase, diagrama fasorial interativo, harmônicas até h15 com THD, janela Hann/retangular e frequência automática 40–70 Hz.
+      <h3>📈 Medições</h3>
+      Quadro de multimedidor por fase e trifásico (V, tensão de linha, I, P, Q, S, FP Indut./Capac.), osciloscópio Va/Vb/Vc, fasores com a fase A em 0°, harmônicas até h15 com THD, desequilíbrio e sequência de fases.
     </td>
     <td width="33%" valign="top">
-      <h3>🔋 Potência AC</h3>
-      Correntes RMS, P, Q da fundamental, S e fator de potência quando há correntes trifásicas sincronizadas. Calibração ganho/offset por canal.
+      <h3>🔋 Energia e demanda</h3>
+      Energia ativa importada/exportada e reativa, demanda de 15 min e máxima com horário, mínimos e máximos por fase. Calibração ganho/offset por canal.
     </td>
     <td width="33%" valign="top">
       <h3>📡 Aquisição serial</h3>
@@ -85,6 +86,11 @@ Com a placa:
     </td>
   </tr>
 </table>
+
+<p align="center">
+  <img src="docs/images/prisma-painel.png" alt="Painel touch em tela cheia: visão geral com valores por fase, indicadores, formas de onda, fasores e harmônicas" width="92%"><br>
+  <sub><b>Painel touch</b> (<code>--painel</code> ou F10): Visão geral, Valores, Formas de onda, Fasores e harmônicas, Energia e demanda e Tendências, com alvos grandes para toque</sub>
+</p>
 
 <table>
   <tr>

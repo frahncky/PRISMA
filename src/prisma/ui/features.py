@@ -72,6 +72,7 @@ class FeaturesMixin:
         self.window_combo.addItems(["Retangular", "Hann"])
         self.phasor_reference = QComboBox()
         self.phasor_reference.addItems(["Absoluta", "Fase A", "Fase B", "Fase C"])
+        self.phasor_reference.setCurrentIndex(1)  # fase A em 0°, como nos medidores e no painel touch
         for combo in (self.frequency_combo, self.window_combo, self.phasor_reference):
             combo.setFixedWidth(240)
         self.selected_phasor = QLabel("Clique na ponta de um fasor para inspecionar.")
