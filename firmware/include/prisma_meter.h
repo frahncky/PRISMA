@@ -120,6 +120,18 @@ static void prisma_meter_publish(prisma_meter *m, unsigned char extra_flags)
     prisma_meter_clear(&m->acc);
 }
 
+/* Recomeça depois de a amostragem parar (ex.: autocalibração do ADC): a janela
+ * em andamento é descartada e o seq pula um número, então o PC conta uma
+ * janela perdida em vez de integrar um trecho com buraco. Chamar com a
+ * interrupção do timer desligada. */
+static void prisma_meter_restart(prisma_meter *m)
+{
+    prisma_meter_clear(&m->acc);
+    m->synced = 0U;
+    m->armed = 0U;
+    ++m->windows;
+}
+
 static void prisma_meter_sample(prisma_meter *m, const unsigned short *x, unsigned char flags)
 {
     unsigned char c;

@@ -63,7 +63,7 @@ Convive com o JSON na mesma serial: o leitor separa linhas de texto e quadros qu
 | Campo | Tipo | Observação |
 | --- | --- | --- |
 | sincronismo | `A5 5A` | |
-| tipo | u8 | `0x01` = rajada · `0x02` = resumo da medição contínua |
+| tipo | u8 | `0x01` = rajada · `0x02` = resumo da medição contínua · `0x10`/`0x11` = comando/resposta |
 | len | u16 LE | bytes do payload |
 | payload | len bytes | |
 | CRC | u16 LE | CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) sobre tipo, len e payload |
@@ -103,3 +103,24 @@ Cada canal do perfil de calibração aceita `delay_us` opcional, além de `gain`
 ```json
 {"version": 1, "name": "Bancada", "channels": {"ia": {"gain": 0.0123, "offset": 0.0, "delay_us": 180.0}}}
 ```
+
+## Comandos PC → placa (tipos 0x10 e 0x11)
+
+Com o firmware rev 3 (`PRISMA_CONTINUOUS`), a DEMOEM também recebe pela SCI3. Para isso é preciso o fio `CH340 TXD → J6 PTC0/RX3` (J10 no PTC0). Sem ele, a medição segue normal e só os comandos ficam sem resposta. Parser em `firmware/include/prisma_command.h` (C89, testado com gcc em `tests/test_board_commands.py`); lado do PC em `prisma.core.protocol` (`encode_command`, `CommandReply`, `parse_board_info`).
+
+| Quadro | Payload |
+| --- | --- |
+| comando `0x10` | id u8 · código u8 · argumentos (até 14 bytes) |
+| resposta `0x11` | id u8 · código u8 · estado u8 (0 ok, 1 código desconhecido, 2 argumentos inválidos) · dados |
+
+O id é escolhido pelo PC e volta na resposta. Um comando com CRC errado é descartado sem resposta e contado; o PC considera falha depois de 2 s, tempo que cobre uma rajada de 6 canais (~0,5 s) na frente da resposta. A interrupção de RX só guarda os bytes num buffer de 64. O laço principal interpreta e responde entre um quadro e outro.
+
+| Código | Argumentos | Dados da resposta |
+| --- | --- | --- |
+| `0x01` INFO | — | protocolo u8 (1) · revisão do firmware u8 (3) · canais u8 · rajada a cada N u8 · fs_mhz u32 · amostras por rajada u16 · autocalibração u8 (`0xFF` = não executada, senão máscara de falha ADC1..3) · erros de UART u8 · erros de comando u16 · janelas u32 |
+| `0x02` RAJADA | N u8: uma rajada a cada N janelas, 0 = sem rajadas | N aplicado |
+| `0x03` AUTOCALIBRAÇÃO DO ADC | — | máscara de falha (0 = ok) |
+
+A rajada de 6 canais ocupa ~0,52 s de serial por janela de ~1 s. Com menos rajadas, a serial fica livre e os resumos (energia, RMS, frequência) seguem em toda janela. A autocalibração para o timer por alguns milissegundos: a janela em andamento é descartada e o `seq` salta um número, então o app conta uma janela perdida em vez de integrar um trecho com buraco. Ela muda levemente o ganho do ADC, então a etapa 1 da calibração (ADC com tensão DC) deve ser refeita depois.
+
+O app identifica a placa sozinho no primeiro resumo `0x02` de cada conexão (só firmware PRISMA contínuo manda esse quadro, então outros aparelhos não recebem bytes inesperados). Os botões ficam na aba Hardware/ADC.

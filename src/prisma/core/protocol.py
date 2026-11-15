@@ -277,7 +277,93 @@ def encode_summary(summary: MeterSummary) -> bytes:
     return encode_frame(FRAME_SUMMARY, payload)
 
 
-FRAME_PARSERS = {FRAME_BURST: parse_burst_frame, FRAME_SUMMARY: parse_summary_frame}
+# ---------------------------------------------------------------------------
+# Comandos PC → placa (tipo 0x10) e respostas (tipo 0x11), prisma_command.h
+#
+#   comando:  id u8 | código u8 | argumentos
+#   resposta: id u8 | código u8 | estado u8 | dados
+# ---------------------------------------------------------------------------
+FRAME_COMMAND = 0x10
+FRAME_REPLY = 0x11
+CMD_INFO = 0x01
+CMD_BURST = 0x02
+CMD_ADC_CAL = 0x03
+COMMAND_NAMES = {CMD_INFO: "INFO", CMD_BURST: "RAJADA", CMD_ADC_CAL: "AUTOCALIBRAÇÃO DO ADC"}
+REPLY_OK = 0x00
+REPLY_STATUS = {REPLY_OK: "ok", 0x01: "comando desconhecido", 0x02: "argumentos inválidos"}
+MAX_COMMAND_ARGS = 14
+INFO_FORMAT = struct.Struct("<BBBBIHBBHI")
+ADC_CAL_NEVER = 0xFF
+
+
+def encode_command(command_id: int, code: int, args: bytes = b"") -> bytes:
+    if not 0 <= command_id <= 0xFF or not 0 <= code <= 0xFF or len(args) > MAX_COMMAND_ARGS:
+        raise ValueError("Comando requer id e código de 0 a 255 e até 14 bytes de argumento")
+    return encode_frame(FRAME_COMMAND, bytes((command_id, code)) + bytes(args))
+
+
+@dataclass(frozen=True)
+class CommandReply:
+    command_id: int
+    code: int
+    status: int
+    data: bytes = b""
+
+    @property
+    def ok(self) -> bool:
+        return self.status == REPLY_OK
+
+    @property
+    def status_text(self) -> str:
+        return REPLY_STATUS.get(self.status, f"estado {self.status}")
+
+
+@dataclass(frozen=True)
+class BoardInfo:
+    """Resposta do comando INFO (firmware rev ≥ 3)."""
+    protocol: int
+    firmware_rev: int
+    channels: int
+    burst_every: int
+    fs_hz: float
+    burst_samples: int
+    adc_cal: int          # máscara de falha da autocalibração; 0xFF = nunca rodou
+    rx_errors: int        # bytes com erro de UART ou buffer cheio (satura em 255)
+    command_errors: int   # quadros de comando com cabeçalho ou CRC inválido
+    windows: int
+
+    @property
+    def adc_calibrated(self) -> bool:
+        return self.adc_cal == 0
+
+    @property
+    def adc_cal_text(self) -> str:
+        return adc_cal_text(self.adc_cal)
+
+
+def adc_cal_text(mask: int) -> str:
+    if mask == ADC_CAL_NEVER:
+        return "não executada"
+    if mask == 0:
+        return "ok"
+    return "falhou no " + ", ".join(f"ADC{n}" for n in (1, 2, 3) if mask & (1 << (n - 1)))
+
+
+def parse_board_info(reply: CommandReply) -> BoardInfo:
+    if reply.code != CMD_INFO or not reply.ok or len(reply.data) < INFO_FORMAT.size:
+        raise ValueError("Resposta INFO inválida")
+    protocol, rev, channels, every, fs_mhz, n, cal, rx_err, cmd_err, windows = INFO_FORMAT.unpack_from(reply.data)
+    return BoardInfo(protocol, rev, channels, every, fs_mhz / 1000.0, n, cal, rx_err, cmd_err, windows)
+
+
+def parse_reply_frame(payload: bytes) -> CommandReply:
+    if len(payload) < 3:
+        raise ValueError("Resposta de comando truncada")
+    return CommandReply(payload[0], payload[1], payload[2], bytes(payload[3:]))
+
+
+FRAME_PARSERS = {FRAME_BURST: parse_burst_frame, FRAME_SUMMARY: parse_summary_frame,
+                 FRAME_REPLY: parse_reply_frame}
 
 
 class StreamDecoder:

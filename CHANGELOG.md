@@ -19,6 +19,9 @@
 - Medição contínua na DEMOEM (`PRISMA_CONTINUOUS`): amostragem sem pausa na interrupção do MTIM1, janelas de ~1 s em ciclos inteiros da fase A e quadro de resumo `0x02` com Σx, Σx² e Σv·i. O app calcula RMS, frequência (erro < 0,0001 Hz no simulador) e potência exatos e integra energia e demanda sem lacunas pelo relógio da placa; rajadas seguem para os gráficos. Firmware compilado no CodeWarrior 6.3, ainda não gravado na placa.
 - 6 canais na DEMOEM (`PRISMA_CHANNELS 6`): correntes nas entradas diferenciais DAD0/DAD1/DAD2, convertidas no mesmo ADC logo após a tensão, com conversão de assentamento. O app usa Vref/32768 por contagem nas correntes, mostra os 6 canais na aba Hardware/ADC (correntes tracejadas) e aplica o `delay_us` da calibração também à potência dos resumos. Compilado no CodeWarrior; ainda não gravado nem validado na placa.
 - Aba Hardware/ADC mostra a linha "Medição contínua" (janela, frequência, RMS por canal, janelas perdidas) e voltou a caber em 1360×768 (rótulos com quebra faziam a página rolar).
+- Comandos PC → placa pela SCI3 (firmware rev 3, quadros `0x10`/`0x11` com CRC, `prisma_command.h`): identificar a placa (revisão, canais, contadores de erro), escolher rajada a cada 1/5/30 janelas ou nenhuma e rodar a autocalibração de hardware do ADC. O app identifica a placa sozinho no primeiro resumo e mostra os botões na aba Hardware/ADC. Precisa do fio `CH340 TXD → J6 PTC0/RX3`. Compilado no CodeWarrior; ainda não gravado nem validado na placa.
+- Build do firmware por `scripts/compilar_demoem.ps1` (também no botão Compilar do app): o `CmdIDE /b /q` deixava aberta a janela "CodeWarrior Error" (o IDE 6.3 trava ao fechar sozinho, depois do build pronto).
+- Aba Hardware/ADC cabe em 1360×768 também com 6 canais (linhas da tabela de 20 px; o padding do tema travava em ~30 px).
 - **Sem compilação do firmware ESP32-S3 ou homologação física**; firmware ColdFire/ADC reais, tela TFT e bateria power-path seguem pendentes.
 
 ## 0.2.0

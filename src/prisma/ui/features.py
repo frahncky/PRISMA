@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt
+from PySide6.QtCore import QBuffer, QIODevice, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
@@ -16,6 +16,9 @@ from PySide6.QtWidgets import (
 )
 
 from prisma.core.calibration import Calibration, delays_from_resistive_load, fit_adc, gains_from_reference
+from prisma.core.protocol import (
+    CMD_ADC_CAL, CMD_BURST, CMD_INFO, COMMAND_NAMES, adc_cal_text, encode_command, parse_board_info,
+)
 import numpy as np
 import pyqtgraph as pg
 
@@ -186,8 +189,8 @@ class FeaturesMixin:
 
         hardware = QWidget()
         hw_layout = QVBoxLayout(hardware)
-        hw_layout.setContentsMargins(20, 12, 20, 12)
-        hw_layout.setSpacing(8)
+        hw_layout.setContentsMargins(20, 8, 20, 8)
+        hw_layout.setSpacing(6)
         self.hardware_summary = QLabel("Sem telemetria da placa. Conecte a serial para ver os canais do ADC.")
         self.hardware_summary.setObjectName("muted")
         hw_layout.addWidget(self.hardware_summary)
@@ -197,7 +200,35 @@ class FeaturesMixin:
         hw_layout.addWidget(self.continuous_label)
         # Uma linha cada, sem quebra: rótulo com quebra dentro de QScrollArea faz a
         # página assumir a altura "ideal" e rolar à toa. Texto longo é cortado na borda.
-        for label in (self.hardware_summary, self.continuous_label):
+        # Comandos à placa (firmware rev ≥ 3, fio CH340 TXD → J6 PTC0/RX3).
+        commands = QHBoxLayout()
+        commands.setSpacing(8)
+        self.b_board_info = QPushButton("Identificar placa")
+        self.b_board_info.clicked.connect(lambda: self.send_board_command(CMD_INFO))
+        self.burst_combo = QComboBox()
+        for text, every in (("Rajada a cada janela", 1), ("Rajada a cada 5 janelas", 5),
+                            ("Rajada a cada 30 janelas", 30), ("Sem rajadas", 0)):
+            self.burst_combo.addItem(text, every)
+        self.burst_combo.setToolTip("Forma de onda para gráficos, fasores e harmônicas. Menos rajadas deixam a "
+                                    "serial livre; os resumos (energia, RMS, frequência) seguem a cada janela.")
+        self.burst_combo.activated.connect(
+            lambda _: self.send_board_command(CMD_BURST, bytes((self.burst_combo.currentData(),))))
+        self.b_adc_selfcal = QPushButton("Autocalibrar ADC")
+        self.b_adc_selfcal.setToolTip("Autocalibração de hardware dos três ADCs (alguns ms, perde uma janela). "
+                                      "Muda levemente o ganho: refaça a etapa 1 da calibração depois.")
+        self.b_adc_selfcal.clicked.connect(lambda: self.send_board_command(CMD_ADC_CAL))
+        self.board_label = QLabel("Comandos: conecte a serial (precisa do fio CH340 TXD → J6 PTC0/RX3).")
+        self.board_label.setObjectName("muted")
+        for widget in (self.b_board_info, self.burst_combo, self.b_adc_selfcal):
+            commands.addWidget(widget)
+        commands.addWidget(self.board_label, stretch=1)
+        hw_layout.addLayout(commands)
+        self._command_id = 0
+        self._pending_commands: dict[int, int] = {}
+        self._board_info_asked = False
+        self.board_info = None
+
+        for label in (self.hardware_summary, self.continuous_label, self.board_label):
             label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             label.setMinimumWidth(1)
 
@@ -215,7 +246,7 @@ class FeaturesMixin:
         self.raw_plot.setLabel("bottom", "Tempo", units="s")
         self.raw_plot.setYRange(0, 65535, padding=0.02)
         self.raw_plot.addItem(pg.InfiniteLine(pos=65535, angle=0, pen=pg.mkPen(theme.DANGER, width=1, style=Qt.PenStyle.DashLine)))
-        self.raw_plot.setMinimumHeight(140)
+        self.raw_plot.setMinimumHeight(90)
         self.raw_curves = [self.raw_plot.plot(pen=pg.mkPen(color, width=1.6))
                            for color in theme.PHASE.values()]
         self.raw_curves += [self.raw_plot.plot(pen=pg.mkPen(color, width=1.2, style=Qt.PenStyle.DashLine))
@@ -228,10 +259,13 @@ class FeaturesMixin:
         self.burst_table.verticalHeader().setVisible(False)
         self.burst_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.burst_table.setShowGrid(False)
-        self.burst_table.verticalHeader().setDefaultSectionSize(22)
-        self.burst_table.verticalHeader().setMinimumSectionSize(20)
+        # Mínimo antes do padrão: o padding do tema faria o mínimo do cabeçalho ~30 px
+        # e o padrão seria limitado por ele (6 canais não caberiam em 1360×768).
+        self.burst_table.verticalHeader().setMinimumSectionSize(18)
+        self.burst_table.verticalHeader().setDefaultSectionSize(20)
+        self.burst_table.horizontalHeader().setFixedHeight(30)
         self.burst_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.burst_table.setFixedHeight(36 + 3 * 22 + 4)
+        self.burst_table.setFixedHeight(30 + 3 * 20 + 4)
         burst_layout.addWidget(self.burst_table)
         hw_layout.addWidget(burst_card, stretch=3)
 
@@ -250,6 +284,7 @@ class FeaturesMixin:
         self.adc_table.setShowGrid(False)
         self.adc_table.setColumnWidth(0, 150)
         self.adc_table.setColumnWidth(1, 90)
+        self.adc_table.setMinimumHeight(40)
         status_layout.addWidget(self.adc_table)
         lower.addWidget(status_card, stretch=1)
         json_card = QFrame()
@@ -260,6 +295,7 @@ class FeaturesMixin:
         self.hardware_view = QPlainTextEdit()
         self.hardware_view.setReadOnly(True)
         self.hardware_view.setObjectName("log")
+        self.hardware_view.setMinimumHeight(40)
         self.hardware_view.setPlainText("Demonstração: nenhum estado físico recebido.")
         json_layout.addWidget(self.hardware_view)
         lower.addWidget(json_card, stretch=1)
@@ -610,6 +646,70 @@ class FeaturesMixin:
             except OSError as exc:
                 QMessageBox.critical(self, "Diagnóstico", str(exc))
 
+    COMMAND_TIMEOUT_MS = 2000  # cabe uma rajada de 6 canais (~0,5 s) na frente da resposta
+
+    def send_board_command(self, code: int, args: bytes = b"", *, quiet: bool = False) -> bool:
+        """Envia um comando à placa; a resposta chega por ``_on_command_reply``."""
+        if self.reader is None or not self.reader.isRunning():
+            if not quiet:
+                self.board_label.setText("Comandos: conecte a serial primeiro.")
+            return False
+        self._command_id = (self._command_id + 1) & 0xFF
+        command_id = self._command_id
+        self._pending_commands[command_id] = code
+        self.reader.send(encode_command(command_id, code, args))
+        if not quiet:
+            self.board_label.setText(f"Comando {COMMAND_NAMES[code]} enviado; aguardando a placa…")
+        QTimer.singleShot(self.COMMAND_TIMEOUT_MS, lambda: self._command_timeout(command_id, quiet))
+        return True
+
+    def _command_timeout(self, command_id: int, quiet: bool) -> None:
+        code = self._pending_commands.pop(command_id, None)
+        if code is None:
+            return
+        if quiet:  # identificação automática: só informa, sem log
+            self.board_label.setText("Comandos: a placa não respondeu à identificação (fio CH340 TXD → "
+                                     "J6 PTC0/RX3 ausente ou firmware anterior à rev 3).")
+            return
+        self.board_label.setText(
+            f"Sem resposta a {COMMAND_NAMES[code]}: confira o fio CH340 TXD → J6 PTC0/RX3 (J10 no PTC0) "
+            "e se a placa tem o firmware rev 3 ou mais novo.")
+        self._log(f"Placa não respondeu ao comando {COMMAND_NAMES[code]}.")
+
+    def _on_command_reply(self, reply) -> None:
+        code = self._pending_commands.pop(reply.command_id, None)
+        if code is None or code != reply.code:
+            return  # resposta atrasada ou de outro pedido
+        name = COMMAND_NAMES[code]
+        if not reply.ok:
+            self.board_label.setText(f"Placa recusou {name}: {reply.status_text}.")
+            return
+        if code == CMD_INFO:
+            info = self.board_info = parse_board_info(reply)
+            every = "sem rajadas" if info.burst_every == 0 else (
+                "rajada a cada janela" if info.burst_every == 1 else f"rajada a cada {info.burst_every} janelas")
+            index = self.burst_combo.findData(info.burst_every)
+            if index >= 0:
+                self.burst_combo.setCurrentIndex(index)
+            errors = info.rx_errors + info.command_errors
+            self.board_label.setText(
+                f"Placa: firmware rev {info.firmware_rev} · {info.channels} canais · {info.fs_hz:.1f} Hz · "
+                f"{every} · autocalibração do ADC {info.adc_cal_text}"
+                + (f" · {errors} erro(s) de recepção" if errors else ""))
+        elif code == CMD_BURST:
+            every = reply.data[0] if reply.data else 0
+            index = self.burst_combo.findData(every)
+            if index >= 0:
+                self.burst_combo.setCurrentIndex(index)
+            self.board_label.setText("Placa: " + ("rajadas desligadas (só resumos)." if every == 0 else
+                                                  f"uma rajada a cada {every} janela(s)."))
+        elif code == CMD_ADC_CAL:
+            mask = reply.data[0] if reply.data else 0xFF
+            text = adc_cal_text(mask)
+            self.board_label.setText(f"Autocalibração do ADC: {text}."
+                                     + (" Refaça a etapa 1 da calibração (ADC com tensão DC)." if mask == 0 else ""))
+            self._log(f"Autocalibração do ADC na placa: {text}.")
+
     def _show_block(self, block, vref: float, full_scale: int) -> None:
         """Mostra a rajada bruta (antes de calibração) na página Hardware / ADC."""
         from prisma.ui.main_window import nominal_gain
@@ -625,7 +725,7 @@ class FeaturesMixin:
             curve.setData(t, columns[index]) if index < len(columns) else curve.setData([], [])
         if self.burst_table.rowCount() != len(block.channels):
             self.burst_table.setRowCount(len(block.channels))
-            self.burst_table.setFixedHeight(36 + len(block.channels) * 22 + 4)
+            self.burst_table.setFixedHeight(30 + len(block.channels) * 20 + 4)
         for row, (name, values) in enumerate(zip(block.channels, columns)):
             # Correntes: diferencial em binário deslocado, zero em 32768 e ±Vref nas pontas.
             zero = 32768 if row >= 3 else 0

@@ -17,9 +17,7 @@ $project = Join-Path $PSScriptRoot '..\firmware\codewarrior\EM256 Demo' | Resolv
 $abs = Join-Path $project 'bin\Project.abs'
 
 if ($Build) {
-    $out = & (Join-Path $CodeWarrior 'bin\CmdIDE.exe') (Join-Path $project 'EM256 Demo.mcp') /b /q 2>&1 | Out-String
-    Write-Output $out.Trim()
-    if ($LASTEXITCODE -ne 0) { throw "Build falhou (código $LASTEXITCODE)." }
+    & (Join-Path $PSScriptRoot 'compilar_demoem.ps1') -CodeWarrior $CodeWarrior
 }
 if (-not (Test-Path $abs)) { throw "Artefato inexistente: $abs" }
 $hash = (Get-FileHash $abs -Algorithm SHA256).Hash

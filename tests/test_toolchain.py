@@ -100,6 +100,8 @@ def test_projeto_demoem_codewarrior_carrega():
 
     root = Path(__file__).resolve().parents[1]
     project = Project.load(root / "examples/projects/demoem-codewarrior.json")
-    assert project.build[1:] == ["EM256 Demo.mcp", "/b", "/q"]
+    # Script em vez de CmdIDE /b /q: o IDE 6.3 trava ao fechar sozinho e abre "CodeWarrior Error".
+    assert project.build[-1] == "../../../scripts/compilar_demoem.ps1"
+    assert (project.directory / project.build[-1]).resolve().is_file()
     assert project.artifact.name == "Project.abs"
     assert project.flash == [] and project.debugger == []

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from prisma import __version__
 from prisma.core.measurement import (summary_measurement, LIMIT_THD_PERCENT, LIMIT_UNBALANCE_PERCENT, MeterStats, SignalBuffer, analyze,
                                      sequence_components)
-from prisma.core.protocol import Sample
+from prisma.core.protocol import CMD_INFO, Sample
 from prisma.core.recording import CsvRecorder
 from prisma.core.serial_reader import SerialReader
 from prisma.core.history import SqliteRecorder
@@ -588,6 +588,10 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.reader.status_received.connect(lambda status: self._on_hardware_status(status) if self.reader is reader else None)
         self.reader.block_received.connect(lambda block: self._on_block(block) if self.reader is reader else None)
         self.reader.summary_received.connect(lambda summary: self._on_summary(summary) if self.reader is reader else None)
+        self.reader.reply_received.connect(lambda reply: self._on_command_reply(reply) if self.reader is reader else None)
+        self._pending_commands.clear()
+        self._board_info_asked = False
+        self.board_info = None
         self.reader.message.connect(self._log)
         self.reader.disconnected.connect(lambda: self._on_disconnected() if self.reader is reader else None)
         self.reader.start()
@@ -661,6 +665,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         não é estimada: só contada em ``summaries_lost``.
         """
         self._enter_raw_mode()
+        if not self._board_info_asked:
+            # Resumo 0x02 prova firmware PRISMA contínuo: identifica sem atrapalhar outros aparelhos.
+            self._board_info_asked = self.send_board_command(CMD_INFO, quiet=True)
         if self._last_summary_seq is not None and summary.seq > self._last_summary_seq + 1:
             self.summaries_lost += summary.seq - self._last_summary_seq - 1
         self._last_summary_seq = summary.seq

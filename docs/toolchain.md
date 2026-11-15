@@ -4,7 +4,7 @@ A aba **Build / depuração** executa comandos explicitamente configurados em um
 
 ## DEMOEM com CodeWarrior 6.3
 
-`examples/projects/demoem-codewarrior.json` compila `firmware/codewarrior/EM256 Demo` sem abrir a IDE, via `CmdIDE.exe "EM256 Demo.mcp" /b /q` (validado em 14/11/2026: "No Error. (Code 0)", gerando `bin/Project.abs` e o mapa `bin/Project.abs.xMAP`).
+`examples/projects/demoem-codewarrior.json` compila `firmware/codewarrior/EM256 Demo` sem abrir a IDE, via `scripts/compilar_demoem.ps1` (CmdIDE sem `/q` e IDE encerrado em seguida, porque o IDE 6.3 trava ao fechar sozinho e abre "CodeWarrior Error"; antes era `CmdIDE.exe "EM256 Demo.mcp" /b /q`) (validado em 14/11/2026: "No Error. (Code 0)", gerando `bin/Project.abs` e o mapa `bin/Project.abs.xMAP`).
 
 - **Gravação:** continua manual pelo HI-WAVE/PEmicro (`cmd/prisma_flash_and_run.cmd`); a linha de comando do HI-WAVE não foi validada, por isso `flash` fica vazio.
 - **Depuração:** a instalação CodeWarrior 6.3 da bancada não traz GDB para ColdFire V1 nem servidor GDB PEmicro para esse núcleo; breakpoints e registradores ficam no HI-WAVE. O cliente GDB/MI do PRISMA só se aplica quando existir um par GDB/servidor compatível.

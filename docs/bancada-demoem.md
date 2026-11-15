@@ -5,7 +5,7 @@ A placa DEMOEM/MCF51EM256 foi testada fisicamente em 14/11/2026. O firmware foi 
 ## Resultado reproduzível
 
 - Alimentar a DEMOEM pela fonte/bateria adequada.
-- Para a serial, ligar somente `J6 PTC1/TX3 -> CH340 RXD` e `J6 GND -> CH340 GND`. Não ligar VCC/5 V/3,3 V. PTC0/RX3 é opcional e ficou desconectado no teste de transmissão.
+- Para a serial, ligar somente `J6 PTC1/TX3 -> CH340 RXD` e `J6 GND -> CH340 GND`. Não ligar VCC/5 V/3,3 V. PTC0/RX3 (`CH340 TXD → J6 PTC0`, J10 no PTC0) só é preciso para os comandos do PC (firmware rev 3: identificar, rajadas, autocalibração do ADC); sem ele a medição funciona igual.
 - Remover J7/J8 ao usar o adaptador externo, evitando disputa com a interface serial da placa.
 - Manter J36 em 1–2 para alimentar o MC9S08QE8 e J38 fechado para levar seus seis sinais PWM filtrados aos ADCs. J29 mantém DADM0/1/2 referidos ao GND na configuração de demonstração.
 - No PRISMA, carregar `examples/profiles/demoem-ch340.json`, selecionar a COM do CH340 e conectar.

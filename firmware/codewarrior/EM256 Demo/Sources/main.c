@@ -2,7 +2,8 @@
 #include "derivative.h"
 
 /* PRISMA serial and raw ADC diagnostic for DEMOEM / MCF51EM256.
- * J6 PTC1/TX3 -> CH340 RXD; connect the grounds. RX is not required.
+ * J6 PTC1/TX3 -> CH340 RXD; connect the grounds. RX (CH340 TXD -> J6 PTC0/RX3,
+ * J10 on PTC0) is only needed for commands from the PC (prisma_command.h).
  * Terminal: PRISMA_SCI_BAUD (default 115200), 8 data bits, no parity, 1 stop bit.
  * J38 connects the QE8 filtered PWM signals to the EM256 ADC inputs.
  */
@@ -53,7 +54,12 @@ const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 #error "PRISMA_CONTINUOUS requer PRISMA_BINARY"
 #endif
 #include "../../../include/prisma_meter.h"
+#include "../../../include/prisma_command.h"
 #endif
+
+/* Revisão do firmware informada pelo comando INFO: 1 = rajada, 2 = medição
+ * contínua, 3 = comandos pela RX3 (rajada configurável e autocalibração do ADC). */
+#define PRISMA_FW_REV 3U
 
 /* Canais na medição contínua:
  * 3: tensões AD4/AD5/AD6 (modo validado em bancada).
@@ -291,6 +297,17 @@ static prisma_meter meter;
 static volatile byte burst_armed;              /* laço pediu uma rajada */
 static volatile byte burst_ready;              /* rajada completa, aguardando envio */
 static volatile word burst_fill;
+static byte burst_every = 1U;                  /* uma rajada a cada N janelas; 0 = nenhuma */
+static byte burst_wait;
+
+/* Recepção: a interrupção só guarda o byte; o laço principal interpreta. */
+#define RX_SIZE 64U                            /* potência de 2; cabe ~4 comandos */
+static volatile byte rx_buf[RX_SIZE];
+static volatile byte rx_head;
+static byte rx_tail;
+static volatile byte rx_errors;                /* overrun, ruído, enquadramento ou buffer cheio */
+static prisma_cmd_parser cmd;
+static byte adc_cal_result = 0xFFU;            /* 0xFF: autocalibração nunca rodou */
 #endif
 
 static void MTIM1_Init(void)
@@ -302,6 +319,24 @@ static void MTIM1_Init(void)
 }
 
 #if PRISMA_CONTINUOUS
+/* Ler S1 e depois D limpa RDRF e OR. Bits de erro: OR 0x08, NF 0x04, FE 0x02, PF 0x01. */
+interrupt VectorNumber_Vsci3rx void SCI3_RX_ISR(void)
+{
+  byte status = SCI3S1;
+  byte value = SCI3D;
+  byte next = (byte)((rx_head + 1U) & (RX_SIZE - 1U));
+
+  if (((status & 0x0FU) != 0U) || (next == rx_tail)) {
+    if (rx_errors != 0xFFU) {
+      ++rx_errors;
+    }
+  }
+  if (next != rx_tail) {
+    rx_buf[rx_head] = value;
+    rx_head = next;
+  }
+}
+
 /* Bits de timeout: 0x01 ADC1, 0x02 ADC2, 0x04 ADC3 (COCO ainda zerado). */
 static byte ADC_Missing(void)
 {
@@ -523,6 +558,87 @@ static void Burst_Send(void)
 }
 #endif
 
+#if PRISMA_CONTINUOUS
+/* Prepara a conversão lida no 1º tick, na partida e depois da autocalibração. */
+static void Meter_Prime(void)
+{
+#if PRISMA_CHANNELS == 6
+  have_prev = 0U;
+  ADC3SC1A = ADC_SC1_CURRENT3;                /* O 1º tick lê "correntes" e descarta. */
+  ADC1SC1A = ADC_SC1_CURRENT1;
+  ADC2SC1A = ADC_SC1_CURRENT2;
+#else
+  ADC3SC1A = 4U;                              /* Primeira conversão para o 1º tick. */
+  ADC1SC1A = 5U;
+  ADC2SC1A = 6U;
+#endif
+}
+
+/* Autocalibração de hardware com a amostragem parada (alguns ms). A janela em
+ * andamento e a rajada pendente são descartadas; o PC vê uma janela perdida. */
+static void Meter_CalibrateAdc(void)
+{
+  MTIM1SC = 0x10U;                            /* TSTP, sem IRQ. */
+  ADC_Calibrate();
+  adc_cal_result = adc_cal_fail;
+  burst_armed = 0U;
+  burst_ready = 0U;
+  burst_wait = 0U;
+  prisma_meter_restart(&meter);
+  (void)ADC3_Read(4U, 0U);                    /* Assenta cada módulo no canal fixo. */
+  (void)ADC1_Read(5U, 0U);
+  (void)ADC2_Read(6U, 0U);
+  Meter_Prime();
+  MTIM1SC = 0x60U;                            /* TOIE + TRST. */
+}
+
+static void Command_Run(void)
+{
+  unsigned char data[18];
+  byte code = cmd.payload[1];
+  byte args = prisma_cmd_args(&cmd);
+
+  if ((code == PRISMA_CMD_INFO) && (args == 0U)) {
+    data[0] = 1U;                             /* versão do protocolo de comandos */
+    data[1] = PRISMA_FW_REV;
+    data[2] = PRISMA_CHANNELS;
+    data[3] = burst_every;
+    prisma_le32(&data[4], BURST_FS_MHZ);
+    prisma_le16(&data[8], BURST_SAMPLES);
+    data[10] = adc_cal_result;
+    data[11] = rx_errors;
+    prisma_le16(&data[12], cmd.errors);
+    prisma_le32(&data[14], meter.windows);    /* leitura de 32 bits alinhada: atômica */
+    prisma_cmd_reply(SCI3_PutByte, &cmd, PRISMA_REPLY_OK, data, 18U);
+  } else if ((code == PRISMA_CMD_BURST) && (args == 1U)) {
+    burst_every = cmd.payload[2];
+    burst_wait = 0U;
+    data[0] = burst_every;
+    prisma_cmd_reply(SCI3_PutByte, &cmd, PRISMA_REPLY_OK, data, 1U);
+  } else if ((code == PRISMA_CMD_ADC_CAL) && (args == 0U)) {
+    Meter_CalibrateAdc();
+    data[0] = adc_cal_result;
+    prisma_cmd_reply(SCI3_PutByte, &cmd, PRISMA_REPLY_OK, data, 1U);
+  } else {
+    prisma_cmd_reply(SCI3_PutByte, &cmd,
+                     ((code >= PRISMA_CMD_INFO) && (code <= PRISMA_CMD_ADC_CAL)) ? PRISMA_REPLY_BAD_ARGS
+                                                                                : PRISMA_REPLY_UNKNOWN,
+                     data, 0U);
+  }
+}
+
+static void Command_Poll(void)
+{
+  while (rx_tail != rx_head) {
+    byte value = rx_buf[rx_tail];
+    rx_tail = (byte)((rx_tail + 1U) & (RX_SIZE - 1U));
+    if (prisma_cmd_feed(&cmd, value) != 0U) {
+      Command_Run();
+    }
+  }
+}
+#endif
+
 void main(void)
 {
   InitSystems();
@@ -544,23 +660,25 @@ void main(void)
 #if PRISMA_CONTINUOUS
 #if PRISMA_CHANNELS == 6
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"CONTINUOUS MODE 6CH\"}\r\n");
-  have_prev = 0U;
-  ADC3SC1A = ADC_SC1_CURRENT3;                /* O 1º tick lê "correntes" e descarta. */
-  ADC1SC1A = ADC_SC1_CURRENT1;
-  ADC2SC1A = ADC_SC1_CURRENT2;
 #else
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"CONTINUOUS MODE\"}\r\n");
-  ADC3SC1A = 4U;                              /* Primeira conversão para o 1º tick. */
-  ADC1SC1A = 5U;
-  ADC2SC1A = 6U;
 #endif
+  Meter_Prime();
   prisma_meter_init(&meter, PRISMA_CHANNELS, METER_MIN_SAMPLES, METER_MAX_SAMPLES, METER_HYSTERESIS);
+  prisma_cmd_init(&cmd);
   burst_armed = 0U;
   burst_ready = 0U;
+  rx_head = 0U;
+  rx_tail = 0U;
+  rx_errors = 0U;
+  (void)SCI3S1;                               /* Limpa RDRF/OR de lixo da partida. */
+  (void)SCI3D;
+  SCI3C2 = (byte)(SCI3C2 | SCI3C2_RIE_MASK);  /* Interrupção de recepção. */
   MTIM1SC = 0x60U;                            /* TOIE + TRST: run with IRQ. */
   EnableInterrupts;
 
   for (;;) {
+    Command_Poll();                           /* Respostas saem entre um quadro e outro. */
     if (meter.ready_flag != 0U) {
       prisma_meter_window window;
       DisableInterrupts;                      /* Cópia sem a interrupção no meio. */
@@ -568,7 +686,11 @@ void main(void)
       meter.ready_flag = 0U;
       EnableInterrupts;
       prisma_meter_send(&window, PRISMA_CHANNELS, SCI3_PutByte, BURST_FS_MHZ);
-      if ((burst_armed == 0U) && (burst_ready == 0U)) {
+      if (burst_wait != 0xFFU) {
+        ++burst_wait;
+      }
+      if ((burst_every != 0U) && (burst_wait >= burst_every) && (burst_armed == 0U) && (burst_ready == 0U)) {
+        burst_wait = 0U;
         adc_timeout = 0U;
         burst_fill = 0U;
         burst_armed = 1U;                     /* Próximos 500 ticks viram rajada. */
