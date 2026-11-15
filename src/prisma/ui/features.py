@@ -215,9 +215,11 @@ class FeaturesMixin:
         self.raw_plot.setLabel("bottom", "Tempo", units="s")
         self.raw_plot.setYRange(0, 65535, padding=0.02)
         self.raw_plot.addItem(pg.InfiniteLine(pos=65535, angle=0, pen=pg.mkPen(theme.DANGER, width=1, style=Qt.PenStyle.DashLine)))
-        self.raw_plot.setMinimumHeight(180)
+        self.raw_plot.setMinimumHeight(140)
         self.raw_curves = [self.raw_plot.plot(pen=pg.mkPen(color, width=1.6))
                            for color in theme.PHASE.values()]
+        self.raw_curves += [self.raw_plot.plot(pen=pg.mkPen(color, width=1.2, style=Qt.PenStyle.DashLine))
+                            for color in theme.PHASE.values()]  # correntes, tracejadas
         burst_layout.addWidget(self.raw_plot, stretch=1)
         self.burst_table = QTableWidget(0, 7)
         self.burst_table.setHorizontalHeaderLabels(
@@ -226,7 +228,10 @@ class FeaturesMixin:
         self.burst_table.verticalHeader().setVisible(False)
         self.burst_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.burst_table.setShowGrid(False)
-        self.burst_table.setFixedHeight(128)
+        self.burst_table.verticalHeader().setDefaultSectionSize(22)
+        self.burst_table.verticalHeader().setMinimumSectionSize(20)
+        self.burst_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.burst_table.setFixedHeight(36 + 3 * 22 + 4)
         burst_layout.addWidget(self.burst_table)
         hw_layout.addWidget(burst_card, stretch=3)
 
@@ -368,15 +373,15 @@ class FeaturesMixin:
         self.settings.setValue("last_profile", str(path.resolve()))
         self._log(f"Perfil carregado: {profile.name} · {profile.baudrate} baud · protocolo {profile.protocol}")
 
-    def _default_gain(self) -> float:
+    def _default_gain(self, channel: str) -> float:
         """Ganho implícito de um canal sem coeficiente: escala nominal só em rajada sem calibração."""
-        from prisma.ui.main_window import ADC_FULL_SCALE, ADC_VREF_V
-        return ADC_VREF_V / ADC_FULL_SCALE if self.raw_counts and not self.calibration.channels else 1.0
+        from prisma.ui.main_window import nominal_gain
+        return nominal_gain(channel) if self.raw_counts and not self.calibration.channels else 1.0
 
     def _calibration_base(self) -> dict[str, dict]:
         """Coeficientes que levam a entrada de cada canal ao valor exibido hoje."""
-        default = {"gain": self._default_gain(), "offset": 0.0}
-        return {ch: dict(self.calibration.channels.get(ch, default)) for ch in CAL_CHANNELS}
+        return {ch: dict(self.calibration.channels.get(ch, {"gain": self._default_gain(ch), "offset": 0.0}))
+                for ch in CAL_CHANNELS}
 
     def calibrate_adc(self, points: dict[str, list[tuple[float, float]]] | None = None,
                       filename: str | None = None) -> None:
@@ -607,27 +612,36 @@ class FeaturesMixin:
 
     def _show_block(self, block, vref: float, full_scale: int) -> None:
         """Mostra a rajada bruta (antes de calibração) na página Hardware / ADC."""
+        from prisma.ui.main_window import nominal_gain
         t = [s.t - block.samples[0].t for s in block.samples]
-        columns = list(zip(*((s.va, s.vb, s.vc) for s in block.samples)))
+        six = block.samples[0].ia is not None
+        columns = list(zip(*((s.va, s.vb, s.vc, *((s.ia, s.ib, s.ic) if six else ())) for s in block.samples)))
         self.block_count += 1
         self.block_names = tuple(block.channels)
         self.last_block_stats = {
             ch: (float(np.mean(values)), float(np.std(values)), bool(min(values) <= 0 or max(values) >= full_scale))
             for ch, values in zip(("va", "vb", "vc"), columns)}
-        for curve, values in zip(self.raw_curves, columns):
-            curve.setData(t, values)
-        self.burst_table.setRowCount(len(block.channels))
+        for index, curve in enumerate(self.raw_curves):
+            curve.setData(t, columns[index]) if index < len(columns) else curve.setData([], [])
+        if self.burst_table.rowCount() != len(block.channels):
+            self.burst_table.setRowCount(len(block.channels))
+            self.burst_table.setFixedHeight(36 + len(block.channels) * 22 + 4)
         for row, (name, values) in enumerate(zip(block.channels, columns)):
+            # Correntes: diferencial em binário deslocado, zero em 32768 e ±Vref nas pontas.
+            zero = 32768 if row >= 3 else 0
             peak = max(values)
-            saturated = sum(v >= full_scale for v in values)
+            swing = max(abs(peak - zero), abs(min(values) - zero))
+            span = 32768 if row >= 3 else full_scale
+            saturated = sum(v >= full_scale or (row >= 3 and v <= 0) for v in values)
             usage = QProgressBar()
             usage.setRange(0, 1000)
-            usage.setValue(int(1000 * peak / full_scale))
-            usage.setFormat(f"{100 * peak / full_scale:.0f} %")
+            usage.setValue(int(1000 * min(swing / span, 1.0)))
+            usage.setFormat(f"{100 * swing / span:.0f} %")
             usage.setMaximumHeight(16)
             usage.setAlignment(Qt.AlignmentFlag.AlignCenter)
             cells = (name.upper(), f"{min(values):.0f}", f"{peak:.0f}", f"{sum(values) / len(values):.0f}",
-                     f"{peak * vref / full_scale:.3f} V", None, f"{saturated}")
+                     f"{(peak - zero) * (nominal_gain('ia') if row >= 3 else vref / full_scale):.3f} V",
+                     None, f"{saturated}")
             for column, text in enumerate(cells):
                 if text is None:
                     self.burst_table.setCellWidget(row, column, usage)
@@ -641,7 +655,8 @@ class FeaturesMixin:
         warn = f" · ⚠ timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
         self.hardware_summary.setText(
             f"Rajada {block.seq}: {len(block.samples)} amostras por canal a {block.fs_hz:.1f} Hz "
-            f"({len(block.samples) / block.fs_hz * 1000:.0f} ms){warn}. Pico no pino = contagem × {vref} V / {full_scale}.")
+            f"({len(block.samples) / block.fs_hz * 1000:.0f} ms){warn}. Pico no pino = contagem × {vref} V / {full_scale}"
+            + (f"; correntes (diferenciais) = (contagem − 32768) × {vref} V / 32768." if six else "."))
 
     def _on_hardware_status(self, status) -> None:
         message = getattr(status, "message", "")

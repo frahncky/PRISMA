@@ -341,12 +341,17 @@ class MeterStats:
 
 
 def summary_measurement(summary: MeterSummary, gains: dict[str, float],
-                        reactive_sign: dict[str, float] | None = None) -> Measurement:
+                        reactive_sign: dict[str, float] | None = None,
+                        delays_s: dict[str, float] | None = None) -> Measurement:
     """Grandezas de uma janela contínua da placa, com os ganhos da calibração.
 
     RMS e P vêm das somas exatas (offset não importa: só a parte AC entra).
     Sem fasores, as somas não dão o sinal de Q: o módulo é √(S² − P²) e o
     sinal vem de ``reactive_sign`` (da última análise de forma de onda).
+
+    ``delays_s`` (``delay_us`` da calibração, positivo = canal atrasado) corrige
+    a defasagem entre tensão e corrente: o canal lido com atraso d gira a
+    potência complexa medida de ω·(d_i − d_v), então S = S' · e^(−jω(d_i − d_v)).
     """
     voltages, currents = ("va", "vb", "vc"), ("ia", "ib", "ic")
     rms = {p: summary.ac_rms(i) * gains[voltages[i]] for i, p in enumerate(PHASES)}
@@ -357,6 +362,11 @@ def summary_measurement(summary: MeterSummary, gains: dict[str, float],
             active = summary.active(i) * gains[voltages[i]] * gains[currents[i]]
             apparent = rms[phase] * current_rms[phase]
             reactive = math.sqrt(max(apparent ** 2 - active ** 2, 0.0)) * (reactive_sign or {}).get(phase, 1.0)
+            skew = (delays_s or {}).get(currents[i], 0.0) - (delays_s or {}).get(voltages[i], 0.0)
+            if skew and summary.frequency_hz:
+                theta = -2 * math.pi * summary.frequency_hz * skew
+                active, reactive = (active * math.cos(theta) - reactive * math.sin(theta),
+                                    active * math.sin(theta) + reactive * math.cos(theta))
             power[phase] = Power(active, reactive, apparent,
                                  float(np.clip(active / apparent, -1, 1)) if apparent > 1e-12 else None)
     return Measurement(rms, {}, [], summary.frequency_hz or 0.0, current_rms=current_rms, power=power)

@@ -55,6 +55,31 @@ const byte prisma_nv_trim  @0x000003FF = PRISMA_ICS_TRIM;
 #include "../../../include/prisma_meter.h"
 #endif
 
+/* Canais na medição contínua:
+ * 3: tensões AD4/AD5/AD6 (modo validado em bancada).
+ * 6: tensões AD4/AD5/AD6 + correntes diferenciais DAD0/DAD1/DAD2 (DADM no GND
+ *    pelo J29). Cada ADC converte a tensão e depois a corrente do mesmo par:
+ *    ADC3 = AD4 + DAD0, ADC1 = AD5 + DAD1, ADC2 = AD6 + DAD2 (AN3949). */
+#ifndef PRISMA_CHANNELS
+#if PRISMA_CONTINUOUS
+#define PRISMA_CHANNELS 6
+#else
+#define PRISMA_CHANNELS 3
+#endif
+#endif
+/* Conversões descartadas depois de trocar o canal de um ADC: a troca imediata
+ * entre entrada simples e diferencial deixou resíduo na bancada (14/11/2026). */
+#ifndef PRISMA_SETTLE
+#define PRISMA_SETTLE 1
+#endif
+#if (PRISMA_CHANNELS != 3) && (PRISMA_CHANNELS != 6)
+#error "PRISMA_CHANNELS deve ser 3 ou 6"
+#endif
+#if (PRISMA_CHANNELS == 6) && !PRISMA_CONTINUOUS
+#error "6 canais exigem PRISMA_CONTINUOUS"
+#endif
+#define BURST_MASK ((byte)(PRISMA_CHANNELS == 6 ? 0x3FU : 0x07U))
+
 static byte adc_timeout;
 
 static void InitSystems(void)
@@ -253,7 +278,7 @@ static word ADC3_Read(byte channel, byte differential)
 #define BURST_MTIM_MOD 77U
 #define BURST_FS_MHZ 1995487UL                /* 19922944 / 128 / 78 * 1000. */
 
-static word burst_data[BURST_SAMPLES][3];
+static word burst_data[BURST_SAMPLES][PRISMA_CHANNELS];
 static word burst_seq;
 
 #if PRISMA_CONTINUOUS
@@ -277,35 +302,103 @@ static void MTIM1_Init(void)
 }
 
 #if PRISMA_CONTINUOUS
+/* Bits de timeout: 0x01 ADC1, 0x02 ADC2, 0x04 ADC3 (COCO ainda zerado). */
+static byte ADC_Missing(void)
+{
+  byte mask = 0U;
+  if (ADC1SC1A_COCOA == 0U) { mask = (byte)(mask | 0x01U); }
+  if (ADC2SC1A_COCOA == 0U) { mask = (byte)(mask | 0x02U); }
+  if (ADC3SC1A_COCOA == 0U) { mask = (byte)(mask | 0x04U); }
+  return mask;
+}
+
+#if PRISMA_CHANNELS == 6
+#define ADC_SC1_VOLTAGE3 4U                    /* AD4, simples */
+#define ADC_SC1_VOLTAGE1 5U                    /* AD5 */
+#define ADC_SC1_VOLTAGE2 6U                    /* AD6 */
+#define ADC_SC1_CURRENT3 0x21U                 /* DAD0, diferencial */
+#define ADC_SC1_CURRENT1 0x22U                 /* DAD1 */
+#define ADC_SC1_CURRENT2 0x23U                 /* DAD2 */
+
+/* Dispara os três ADCs juntos e espera (~20 us cada conversão de 16 bits). */
+static byte ADC_ConvertAll(byte sc3, byte sc1, byte sc2)
+{
+  volatile word wait = 400U;
+  ADC3SC1A = sc3;
+  ADC1SC1A = sc1;
+  ADC2SC1A = sc2;
+  while (((ADC1SC1A_COCOA == 0U) || (ADC2SC1A_COCOA == 0U) || (ADC3SC1A_COCOA == 0U)) && (wait != 0U)) {
+    --wait;
+  }
+  return ADC_Missing();
+}
+
+static unsigned short prev_v[3];
+static byte have_prev;
+#endif
+
 /*
- * Uma amostra por estouro do MTIM1 (~1995,5 Hz). Lê o resultado da conversão
- * disparada no tick anterior (pronta há ~500 us) e dispara a próxima logo em
- * seguida: os três ADCs começam juntos e sempre no mesmo ponto do tick, sem
- * espera ativa dentro da interrupção. COCO ainda zerado = conversão perdida.
+ * Uma amostra por estouro do MTIM1 (~1995,5 Hz), sem parar.
+ *
+ * 3 canais: lê a conversão disparada no tick anterior (pronta há ~500 us) e
+ * dispara a próxima logo em seguida, sem espera ativa.
+ *
+ * 6 canais: lê as correntes disparadas no fim do tick anterior, converte as
+ * tensões agora (com espera) e dispara as correntes, que ficam prontas para o
+ * próximo tick. Tensão e corrente do mesmo tick saem juntas com um tick de
+ * atraso; a corrente é amostrada ~2 conversões depois da tensão (~40 us com
+ * PRISMA_SETTLE 1), corrigido no PC pelo delay_us da calibração. A corrente
+ * diferencial (complemento de 2) vai em binário deslocado (+32768), como as
+ * tensões, para o núcleo de medição só lidar com valores sem sinal.
  */
 /* Sintaxe do porting support HCS08 do projeto: a entrada do vetor 75 sai daqui
  * e substitui a fraca (weak) de exceptions.c. */
 interrupt VectorNumber_Vmtim1 void MTIM1_ISR(void)
 {
-  unsigned short x[3];
-  byte timeout = 0U;
+  unsigned short x[PRISMA_CHANNELS];
+  byte timeout;
+  byte c;
 
   MTIM1SC = (byte)(MTIM1SC & (byte)~0x80U);   /* Read-then-write clears TOF. */
-  if (ADC1SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x01U); }
-  if (ADC2SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x02U); }
-  if (ADC3SC1A_COCOA == 0U) { timeout = (byte)(timeout | 0x04U); }
+  timeout = ADC_Missing();
+#if PRISMA_CHANNELS == 6
+  x[3] = (unsigned short)(ADC3RA ^ 0x8000U);  /* DAD0, tick anterior */
+  x[4] = (unsigned short)(ADC1RA ^ 0x8000U);  /* DAD1 */
+  x[5] = (unsigned short)(ADC2RA ^ 0x8000U);  /* DAD2 */
+#if PRISMA_SETTLE
+  timeout = (byte)(timeout | ADC_ConvertAll(ADC_SC1_VOLTAGE3, ADC_SC1_VOLTAGE1, ADC_SC1_VOLTAGE2));
+#endif
+  timeout = (byte)(timeout | ADC_ConvertAll(ADC_SC1_VOLTAGE3, ADC_SC1_VOLTAGE1, ADC_SC1_VOLTAGE2));
+  x[0] = prev_v[0];
+  x[1] = prev_v[1];
+  x[2] = prev_v[2];
+  prev_v[0] = ADC3RA;                         /* AD4, este tick */
+  prev_v[1] = ADC1RA;                         /* AD5 */
+  prev_v[2] = ADC2RA;                         /* AD6 */
+#if PRISMA_SETTLE
+  timeout = (byte)(timeout | ADC_ConvertAll(ADC_SC1_CURRENT3, ADC_SC1_CURRENT1, ADC_SC1_CURRENT2));
+#endif
+  ADC3SC1A = ADC_SC1_CURRENT3;                /* Correntes deste tick: lidas no próximo. */
+  ADC1SC1A = ADC_SC1_CURRENT1;
+  ADC2SC1A = ADC_SC1_CURRENT2;
+  if (have_prev == 0U) {
+    have_prev = 1U;                           /* Ainda não há par tensão/corrente. */
+    return;
+  }
+#else
   x[0] = ADC3RA;                              /* AD4 */
   x[1] = ADC1RA;                              /* AD5 */
   x[2] = ADC2RA;                              /* AD6 */
   ADC3SC1A = 4U;
   ADC1SC1A = 5U;
   ADC2SC1A = 6U;
+#endif
 
   prisma_meter_sample(&meter, x, timeout);
   if (burst_armed != 0U) {
-    burst_data[burst_fill][0] = x[0];
-    burst_data[burst_fill][1] = x[1];
-    burst_data[burst_fill][2] = x[2];
+    for (c = 0U; c < PRISMA_CHANNELS; ++c) {
+      burst_data[burst_fill][c] = x[c];
+    }
     adc_timeout = (byte)(adc_timeout | timeout);
     if (++burst_fill >= BURST_SAMPLES) {
       burst_armed = 0U;
@@ -388,8 +481,9 @@ static void SCI3_PutByte(unsigned char value)
   SCI3D = value;
 }
 
-/* Protocolo binário v2: 3019 bytes por rajada (contra ~3150 do JSON hex),
- * CRC16 calculado durante o envio, sem buffer extra. */
+/* Protocolo binário v2: 3019 bytes por rajada de 3 canais (contra ~3150 do
+ * JSON hex) ou 6019 com 6 canais (~0,52 s a 115200), CRC16 calculado durante
+ * o envio, sem buffer extra. */
 static void Burst_Send(void)
 {
   prisma_stream s;
@@ -397,9 +491,9 @@ static void Burst_Send(void)
   byte c;
 
   prisma_stream_begin_burst(&s, SCI3_PutByte, (unsigned long)burst_seq, BURST_FS_MHZ,
-                            (unsigned short)BURST_SAMPLES, 0x07U, (unsigned char)(adc_timeout & 0x07U));
+                            (unsigned short)BURST_SAMPLES, BURST_MASK, (unsigned char)(adc_timeout & 0x07U));
   for (i = 0U; i < BURST_SAMPLES; ++i) {
-    for (c = 0U; c < 3U; ++c) {
+    for (c = 0U; c < PRISMA_CHANNELS; ++c) {
       prisma_stream_word(&s, burst_data[i][c]);
     }
   }
@@ -448,13 +542,21 @@ void main(void)
   (void)ADC1_Read(5U, 0U);
   (void)ADC2_Read(6U, 0U);
 #if PRISMA_CONTINUOUS
+#if PRISMA_CHANNELS == 6
+  SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"CONTINUOUS MODE 6CH\"}\r\n");
+  have_prev = 0U;
+  ADC3SC1A = ADC_SC1_CURRENT3;                /* O 1º tick lê "correntes" e descarta. */
+  ADC1SC1A = ADC_SC1_CURRENT1;
+  ADC2SC1A = ADC_SC1_CURRENT2;
+#else
   SCI3_PutString("{\"type\":\"status\",\"source\":\"DEMOEM\",\"message\":\"CONTINUOUS MODE\"}\r\n");
-  prisma_meter_init(&meter, 3U, METER_MIN_SAMPLES, METER_MAX_SAMPLES, METER_HYSTERESIS);
-  burst_armed = 0U;
-  burst_ready = 0U;
   ADC3SC1A = 4U;                              /* Primeira conversão para o 1º tick. */
   ADC1SC1A = 5U;
   ADC2SC1A = 6U;
+#endif
+  prisma_meter_init(&meter, PRISMA_CHANNELS, METER_MIN_SAMPLES, METER_MAX_SAMPLES, METER_HYSTERESIS);
+  burst_armed = 0U;
+  burst_ready = 0U;
   MTIM1SC = 0x60U;                            /* TOIE + TRST: run with IRQ. */
   EnableInterrupts;
 
@@ -465,7 +567,7 @@ void main(void)
       window = meter.ready;
       meter.ready_flag = 0U;
       EnableInterrupts;
-      prisma_meter_send(&window, 3U, SCI3_PutByte, BURST_FS_MHZ);
+      prisma_meter_send(&window, PRISMA_CHANNELS, SCI3_PutByte, BURST_FS_MHZ);
       if ((burst_armed == 0U) && (burst_ready == 0U)) {
         adc_timeout = 0U;
         burst_fill = 0U;

@@ -13,6 +13,7 @@ Este diretório contém um encoder JSON em C99, uma aplicação usando HAL, um s
 | `ports/host_simulator.c` | Sinais sintéticos no computador, sem acesso a hardware. |
 | `ports/mcf51em256_port.example.c` | Port pendente, bloqueado por `#error` até configurar o hardware real. |
 | `codewarrior/EM256 Demo/Sources/main.c` | Firmware da DEMOEM: AD4/AD5/AD6 a ~1995 Hz (MTIM1), SCI3 a 115200 8N1 (`PRISMA_SCI_BAUD`) e trim do oscilador em 0x3FE/0x3FF. Com `PRISMA_CONTINUOUS=1` (padrão) amostra sem parar na interrupção do MTIM1 e envia um resumo por janela de ~1 s mais uma rajada de 500 amostras; com `0`, volta ao modo rajada anterior (adquire, para e transmite), validado em bancada. |
+| `PRISMA_CHANNELS` (em `main.c`) | `6` (padrão na medição contínua): tensões AD4/AD5/AD6 + correntes diferenciais DAD0/DAD1/DAD2 (ADC3/ADC1/ADC2, AN3949), com uma conversão descartada após cada troca (`PRISMA_SETTLE`); corrente ~40 µs depois da tensão. `3`: só tensões, como validado em bancada. ~4,3 KB de código e ~6,3 KB de RAM com 6 canais. |
 | `include/prisma_meter.h` | Núcleo da medição contínua em C89 sem ponto flutuante: Σx, Σx² e Σv·i por janela de ciclos inteiros da fase A e quadro de resumo `0x02`. Testado no PC com gcc em `tests/test_meter_firmware.py`. |
 | `codewarrior/EM256 Demo/cmd/prisma_flash_and_run.cmd` | Comandos HI-WAVE para carregar, verificar e executar a imagem. |
 

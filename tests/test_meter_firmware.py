@@ -210,3 +210,50 @@ def test_resumo_perdido_e_contado_e_sem_cruzamento_nao_da_frequencia(window):
     assert "sem cruzamentos" in window.continuous_label.text()
     window.start_demo()
     assert window.last_summary is None and not window._summary_fresh()
+
+
+def test_atraso_da_corrente_e_corrigido_na_potencia_do_resumo():
+    import numpy as np
+    from prisma.core.measurement import summary_measurement
+
+    delay = 40e-6  # a corrente é convertida ~40 µs depois da tensão (firmware de 6 canais)
+    cycles = 52
+    n = round(cycles * FS / F)
+    t = np.arange(n) / FS
+    phi = math.acos(0.9)
+    v = [np.round(30000 + 20000 * np.sin(2 * np.pi * F * t - k * 2 * np.pi / 3)).astype(np.int64) for k in range(3)]
+    i = [np.round(32768 + 8000 * np.sin(2 * np.pi * F * (t + delay) - k * 2 * np.pi / 3 - phi)).astype(np.int64)
+         for k in range(3)]
+    rows = v + i
+    summary = MeterSummary(0, FS, n, ("va", "vb", "vc", "ia", "ib", "ic"), tuple(int(r.sum()) for r in rows),
+                           tuple(int((r * r).sum()) for r in rows), tuple(int((v[p] * i[p]).sum()) for p in range(3)),
+                           cycles, round((cycles - 1) / F * FS * 256))
+    gains = dict.fromkeys(("va", "vb", "vc", "ia", "ib", "ic"), 1.0)
+    true_p = 20000 * 8000 / 2 * 0.9
+    raw = summary_measurement(summary, gains).power["A"].active_w
+    assert abs(raw / true_p - 1) > 1e-3  # sem correção: ~0,55° a mais de FP
+    fixed = summary_measurement(summary, gains, delays_s=dict.fromkeys(("ia", "ib", "ic"), -delay)).power
+    for phase in "ABC":
+        assert fixed[phase].active_w == pytest.approx(true_p, rel=5e-4)
+        assert fixed[phase].reactive_fundamental_var == pytest.approx(20000 * 8000 / 2 * math.sin(phi), rel=2e-3)
+
+
+def test_rajada_de_seis_canais_mostra_correntes_no_pino(window):
+    import numpy as np
+    from prisma.core.protocol import Sample, SampleBlock
+
+    t = np.arange(500) / FS
+    rows = []
+    for k in range(500):
+        volts = [30000 + 20000 * math.sin(2 * math.pi * F * t[k] - p * 2.0944) for p in range(3)]
+        amps = [32768 + 8000 * math.sin(2 * math.pi * F * t[k] - p * 2.0944 - 0.45) for p in range(3)]
+        rows.append(Sample(float(t[k]), *map(round, volts), *map(round, amps)))
+    window._on_block(SampleBlock(0, FS, ("va", "vb", "vc", "ia", "ib", "ic"), tuple(rows)))
+    window._draw_signals()
+    assert window.burst_table.rowCount() == 6
+    peak_ia = float(window.burst_table.item(3, 4).text().split()[0])
+    assert peak_ia == pytest.approx(8000 * 3.3 / 32768, abs=2e-3)  # diferencial: Vref / 32768 por contagem
+    assert len(window.raw_curves[5].getData()[0]) == 500
+    result = window.last_analysis[0]
+    assert result.current_rms["A"] == pytest.approx(8000 / math.sqrt(2) * 3.3 / 32768, rel=0.01)
+    assert result.rms["A"] == pytest.approx(20000 / math.sqrt(2) * 3.3 / 65535, rel=0.01)

@@ -92,7 +92,9 @@ Com `PRISMA_CONTINUOUS` (padrão), a DEMOEM amostra sem parar na interrupção d
 
 O PC calcula com inteiros exatos: `RMS² = (n·Σx² − (Σx)²) / n²`, `P = (n·Σvi − Σv·Σi) / n²` (vezes os ganhos da calibração) e `f = (ciclos − 1) · fs / (period_q8 / 256)`. O período usa dois cruzamentos medidos com o mesmo limiar (a média de A só muda quando a janela fecha). No simulador do PC (`tests/test_meter_firmware.py`), o erro ficou abaixo de 0,0001 Hz e de ±0,03 % no RMS. Esse limite vem da borda da janela, que fica a até ½ amostra do cruzamento exato.
 
-A energia, a demanda e as tendências passam a vir desses resumos: o tempo é a soma das durações das janelas, sem lacunas e pelo relógio da placa. As rajadas (uma por resumo) continuam alimentando osciloscópio, fasores e harmônicas. As somas não dão o sinal de Q: o módulo é `√(S² − P²)` e o sinal vem da última análise de forma de onda. A compensação de atraso (`delay_us`) ainda não se aplica aos resumos.
+Com 6 canais (`PRISMA_CHANNELS 6`, padrão na medição contínua), cada ADC converte a tensão (AD4/AD5/AD6, entrada simples) e depois a corrente do mesmo par (DAD0/DAD1/DAD2, diferencial com DADM no GND pelo J29), com uma conversão descartada após cada troca de canal (`PRISMA_SETTLE`). A corrente vai em binário deslocado (contagem − 32768 = valor diferencial; Vref / 32768 por contagem) e é amostrada ~40 µs depois da tensão do mesmo tick (~0,9° a 60 Hz). Esse atraso entra como `delay_us` negativo nas correntes (≈ −40 µs, ou medido pela calibração de fase com carga resistiva) e é compensado nas rajadas e na potência dos resumos.
+
+A energia, a demanda e as tendências passam a vir desses resumos: o tempo é a soma das durações das janelas, sem lacunas e pelo relógio da placa. As rajadas (uma por resumo) continuam alimentando osciloscópio, fasores e harmônicas. As somas não dão o sinal de Q: o módulo é `√(S² − P²)` e o sinal vem da última análise de forma de onda. O `delay_us` da calibração gira a potência complexa de cada fase: `S = S' · e^(−jω(d_i − d_v))`.
 
 ### Calibração de fase
 

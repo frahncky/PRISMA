@@ -34,6 +34,17 @@ COLORS = theme.PHASE
 # DEMOEM: ADC de 16 bits com VREFH = VDD do regulador de 3,3 V (confirmar com multímetro).
 ADC_VREF_V = 3.3
 ADC_FULL_SCALE = 65535
+CURRENT_CHANNELS = ("ia", "ib", "ic")
+
+
+def nominal_gain(channel: str) -> float:
+    """Volts no pino por contagem, sem calibração.
+
+    Tensões: entrada simples, 0..65535 = 0..Vref. Correntes: entrada diferencial
+    (complemento de 2, ±Vref) que o firmware manda em binário deslocado, então
+    cada contagem vale Vref / 32768 (o dobro).
+    """
+    return ADC_VREF_V / 32768 if channel in CURRENT_CHANNELS else ADC_VREF_V / ADC_FULL_SCALE
 ICON_PATH = Path(__file__).with_name("assets") / "prisma.svg"
 
 
@@ -662,14 +673,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
         signs = {}
         if self.last_analysis is not None:
             signs = {p: -1.0 if x.reactive_fundamental_var < 0 else 1.0 for p, x in self.last_analysis[0].power.items()}
-        result = summary_measurement(summary, gains, signs)
+        result = summary_measurement(summary, gains, signs, self.calibration.delays_s())
         self.stats.update(self._summary_t, result)
         self._show_continuous(summary, result)
 
     def _show_continuous(self, summary, result) -> None:
-        fmt = "{:.4f} V" if self._pin_volts() else "{:.2f} V"
-        values = " · ".join(f"{name.upper()} {fmt.format(result.rms[p])}"
-                            for name, p in zip(getattr(self, "block_names", ("va", "vb", "vc")), "ABC"))
+        pin = self._pin_volts()
+        values = " · ".join(f"V{p.lower()} {result.rms[p]:.4f} V" if pin else f"V{p.lower()} {result.rms[p]:.2f} V"
+                            for p in "ABC")
+        if result.current_rms:
+            values += " · " + " · ".join(
+                f"I{p.lower()} {result.current_rms[p]:.4f} V" if pin else f"I{p.lower()} {result.current_rms[p]:.3f} A"
+                for p in "ABC")
         frequency = (f"f = {summary.frequency_hz:.3f} Hz ({summary.cycles} ciclos)" if summary.synced
                      else "sem cruzamentos (sinal DC ou ausente)")
         problems = []
@@ -711,13 +726,14 @@ class MainWindow(FeaturesMixin, QMainWindow):
         if last.size and block.samples[0].t <= last[-1]:
             self.buffer.clear()
         # Sem calibração, escala nominal; com calibração, os coeficientes partem das contagens.
-        scale = ADC_VREF_V / ADC_FULL_SCALE if not self.calibration.channels else None
+        scale = nominal_gain("va") if not self.calibration.channels else None
+        scale_i = nominal_gain("ia")
         starts = self._block_record_times(block)
         for sample, record_t in zip(block.samples, starts):
             if scale is not None:
                 currents = (sample.ia, sample.ib, sample.ic)
                 sample = Sample(sample.t, sample.va * scale, sample.vb * scale, sample.vc * scale,
-                                *(None if c is None else c * scale for c in currents))
+                                *(None if c is None else c * scale_i for c in currents))
             self._on_sample(sample, record_t)
         names = "/".join(block.channels)
         warning = f" · timeout ADC {block.timeout_mask}" if block.timeout_mask else ""
