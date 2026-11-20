@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/banner.svg" alt="PRISMA — Analisador de energia trifásico" width="100%">
+<img src="docs/images/banner.svg" alt="PRISMA" width="100%">
 
 ### Plataforma de Registro, Instrumentação, Sinais, Medição e Análise
 
