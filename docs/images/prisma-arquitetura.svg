@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 715" role="img" aria-labelledby="title desc">
+  <title id="title">PRISMA — arquitetura do sistema de medição</title>
+  <desc id="desc">Fluxo conceitual: seis grandezas elétricas já isoladas e condicionadas, interface AFE-LV A0, DEMOEM MCF51EM256 e aplicativo PRISMA; gateway ESP32-S3 e IoT planejados. Linhas sólidas indicam aquisição serial de três canais já validada; linhas tracejadas indicam integração pendente.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#081426"/><stop offset=".52" stop-color="#0b1e35"/><stop offset="1" stop-color="#101b35"/></linearGradient>
+    <linearGradient id="main" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#15c4ce"/><stop offset="1" stop-color="#6c8bff"/></linearGradient>
+    <linearGradient id="pcb" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0d5b65"/><stop offset="1" stop-color="#0b3547"/></linearGradient>
+    <linearGradient id="chip" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#3c455a"/><stop offset="1" stop-color="#111d30"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="13" flood-opacity=".3"/></filter>
+    <pattern id="grid" width="42" height="42" patternUnits="userSpaceOnUse"><path d="M42 0H0V42" fill="none" stroke="#c1dcff" stroke-width=".7" opacity=".07"/></pattern>
+    <marker id="tip" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1L9 5L1 9" stroke="#56d9dc" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <marker id="tip2" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto"><path d="M1 1L9 5L1 9" stroke="#9aafff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></marker>
+    <style>
+      text{font-family:Inter,"Segoe UI",Arial,sans-serif}
+      .title{fill:#f5f8ff;font-weight:800}
+      .sub{fill:#b8cbde}
+      .body{fill:#dceaf5}
+      .muted{fill:#9bb2c8}
+      .tiny{font-size:16px}
+      .box{fill:#102640;stroke:#345873;stroke-width:1.5}
+      .planned{stroke:#7e99cd;stroke-width:4;stroke-dasharray:10 10;fill:none;marker-end:url(#tip2)}
+      .valid{stroke:#40dbd0;stroke-width:4;fill:none;marker-end:url(#tip)}
+      .status{fill:#162d44}
+    </style>
+  </defs>
+  <rect width="1600" height="715" rx="26" fill="url(#bg)"/>
+  <rect width="1600" height="715" rx="26" fill="url(#grid)"/>
+  <g transform="translate(50 42)">
+    <path d="M0 35L20 9L41 35L60 10" fill="none" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M60 10L77 35" fill="none" stroke="#818cf8" stroke-width="8" stroke-linecap="round"/>
+    <text x="100" y="39" font-size="48" class="title" letter-spacing="2">PRISMA</text>
+    <rect x="320" y="4" width="2" height="42" fill="#4d7b9c"/>
+    <text x="350" y="27" font-size="26" class="title" font-weight="650">Arquitetura de aquisição e análise de energia</text>
+    <text x="350" y="56" font-size="19" class="sub">DEMOEM / ColdFire MCF51EM256 · interface AFE-LV A0 · comunicação e visualização</text>
+  </g>
+  <path d="M50 123H1550" stroke="#31526b" stroke-width="1.5" opacity=".8"/>
+
+  <!-- Cards -->
+  <g filter="url(#shadow)">
+    <rect class="box" x="50" y="164" width="245" height="319" rx="18"/>
+    <rect x="342" y="164" width="280" height="319" rx="18" fill="#102640" stroke="#2bbac6" stroke-width="1.5"/>
+    <rect x="675" y="164" width="335" height="319" rx="18" fill="#102640" stroke="#58a5d7" stroke-width="1.5"/>
+    <rect class="box" x="1068" y="164" width="472" height="319" rx="18"/>
+  </g>
+
+  <!-- sensor -->
+  <rect x="50" y="164" width="245" height="55" rx="18" fill="#1a3855"/>
+  <rect x="50" y="199" width="245" height="20" fill="#1a3855"/>
+  <text x="72" y="200" font-size="22" class="title">Entradas de medição</text>
+  <text x="72" y="248" font-size="17" class="sub">Tensão e corrente</text>
+  <text x="72" y="272" font-size="15" class="muted">3 fases · 6 grandezas</text>
+  <g stroke-width="3.2" fill="none" stroke-linecap="round">
+    <path stroke="#45d6e8" d="M82 318C94 288 108 347 120 318S147 289 161 318S187 346 201 318"/>
+    <path stroke="#a997ff" d="M82 355C94 325 108 384 120 355S147 326 161 355S187 383 201 355"/>
+    <path stroke="#f7b267" d="M82 392C94 362 108 421 120 392S147 363 161 392S187 420 201 392"/>
+  </g>
+  <text x="72" y="457" font-size="15" class="muted">Sensores isolados: a definir</text>
+
+  <!-- AFE -->
+  <rect x="342" y="164" width="280" height="55" rx="18" fill="#116073"/>
+  <rect x="342" y="198" width="280" height="21" fill="#116073"/>
+  <text x="365" y="200" font-size="24" class="title">AFE-LV A0</text>
+  <text x="365" y="249" font-size="18" class="body">Interface de seis canais</text>
+  <g transform="translate(390 268)">
+    <rect width="183" height="115" rx="13" fill="url(#pcb)" stroke="#40cbbd" stroke-width="2"/>
+    <circle cx="14" cy="14" r="5" fill="#b9dfde"/><circle cx="169" cy="14" r="5" fill="#b9dfde"/>
+    <circle cx="14" cy="102" r="5" fill="#b9dfde"/><circle cx="169" cy="102" r="5" fill="#b9dfde"/>
+    <rect x="18" y="27" width="24" height="59" rx="4" fill="#2a9e71"/>
+    <rect x="142" y="27" width="23" height="59" rx="4" fill="#2a9e71"/>
+    <g fill="#d1f6e6"><circle cx="30" cy="37" r="3"/><circle cx="30" cy="47" r="3"/><circle cx="30" cy="57" r="3"/><circle cx="30" cy="67" r="3"/><circle cx="30" cy="77" r="3"/>
+    <circle cx="153" cy="37" r="3"/><circle cx="153" cy="47" r="3"/><circle cx="153" cy="57" r="3"/><circle cx="153" cy="67" r="3"/><circle cx="153" cy="77" r="3"/></g>
+    <g stroke="#53d8c7" stroke-width="2" fill="none"><path d="M42 37H80V25H118V37H142"/><path d="M42 47H71V55H117V47H142"/><path d="M42 67H83V87H118V67H142"/><path d="M42 77H65V96H125V77H142"/></g>
+    <g fill="#162f38" stroke="#bde4d7" stroke-width="1"><rect x="81" y="25" width="36" height="25" rx="4"/><rect x="80" y="65" width="37" height="25" rx="4"/></g>
+  </g>
+  <rect x="364" y="411" width="232" height="30" rx="15" fill="#12485d"/>
+  <text x="480" y="432" font-size="16" text-anchor="middle" fill="#a6f5dc" font-weight="700">PCB preliminar</text>
+  <text x="365" y="466" font-size="14" class="muted">Somente sinais SELV condicionados</text>
+
+  <!-- DEMOEM -->
+  <rect x="675" y="164" width="335" height="55" rx="18" fill="#224a71"/>
+  <rect x="675" y="198" width="335" height="21" fill="#224a71"/>
+  <text x="700" y="201" font-size="24" class="title">DEMOEM · ColdFire</text>
+  <text x="700" y="249" font-size="18" class="body">MCF51EM256 · 32 bits</text>
+  <g transform="translate(729 271)">
+    <rect x="0" y="0" width="220" height="118" rx="11" fill="#1a3146" stroke="#668baa" stroke-width="2"/>
+    <rect x="35" y="17" width="150" height="88" rx="7" fill="#a5373b" stroke="#f07a7b" stroke-width="2"/>
+    <rect x="74" y="35" width="73" height="55" rx="5" fill="url(#chip)" stroke="#b5bac7" stroke-width="2"/>
+    <text x="110" y="59" text-anchor="middle" font-size="13" fill="#e8edf7" font-weight="700">MCF51</text>
+    <text x="110" y="76" text-anchor="middle" font-size="13" fill="#e8edf7" font-weight="700">EM256</text>
+    <g fill="#edd09a">
+      <rect x="12" y="17" width="12" height="85" rx="2"/><rect x="196" y="17" width="12" height="85" rx="2"/>
+      <rect x="50" y="7" width="123" height="5" rx="2"/><rect x="50" y="107" width="123" height="5" rx="2"/>
+    </g>
+    <rect x="5" y="5" width="12" height="12" rx="2" fill="#5c768f"/>
+    <rect x="203" y="101" width="12" height="12" rx="2" fill="#5c768f"/>
+  </g>
+  <text x="842" y="416" text-anchor="middle" font-size="17" class="body">Aquisição · firmware · UART</text>
+  <rect x="699" y="435" width="286" height="30" rx="15" fill="#164b44"/>
+  <circle cx="721" cy="450" r="5" fill="#38ddaf"/>
+  <text x="844" y="456" text-anchor="middle" fill="#bcf7e6" font-size="15" font-weight="700">3 canais: bancada validada</text>
+
+  <!-- Desktop -->
+  <rect x="1068" y="164" width="472" height="55" rx="18" fill="#203d65"/>
+  <rect x="1068" y="197" width="472" height="22" fill="#203d65"/>
+  <text x="1093" y="201" font-size="23" class="title">Aplicativo PRISMA</text>
+  <text x="1093" y="249" font-size="17" class="body">Osciloscópio · fasores · potência · histórico</text>
+  <g transform="translate(1115 271)">
+    <rect width="380" height="154" rx="9" fill="#060e1f" stroke="#4c6689" stroke-width="2.5"/>
+    <rect x="12" y="12" width="91" height="130" rx="5" fill="#15253d"/>
+    <text x="26" y="39" font-size="13" fill="#b1c5dd">FASE A</text>
+    <text x="26" y="63" font-size="23" fill="#51ded0" font-weight="700">127 V</text>
+    <text x="26" y="88" font-size="13" fill="#b1c5dd">FREQUÊNCIA</text>
+    <text x="26" y="111" font-size="21" fill="#f3b76b" font-weight="700">60 Hz</text>
+    <g stroke="#233c5b" stroke-width=".8">
+      <path d="M121 27H365 M121 51H365 M121 75H365 M121 99H365 M121 123H365"/>
+      <path d="M147 15V133 M189 15V133 M231 15V133 M273 15V133 M315 15V133 M357 15V133"/>
+    </g>
+    <g fill="none" stroke-width="2.8">
+      <path stroke="#3dd3cb" d="M121 70C141 20 161 120 181 70S221 20 241 70S281 120 301 70S341 20 365 70"/>
+      <path stroke="#a995ff" d="M121 94C141 44 161 144 181 94S221 44 241 94S281 144 301 94S341 44 365 94"/>
+      <path stroke="#f8b16f" d="M121 49C141 99 161 -1 181 49S221 99 241 49S281 -1 301 49S341 99 365 49"/>
+    </g>
+  </g>
+  <rect x="1161" y="436" width="290" height="30" rx="15" fill="#173e5d"/>
+  <circle cx="1183" cy="451" r="5" fill="#3bdccf"/>
+  <text x="1310" y="457" text-anchor="middle" font-size="15" fill="#bceefc" font-weight="700">Software funcional · modo demo</text>
+
+  <!-- arrows primary -->
+  <path d="M298 322H338" class="planned"/>
+  <path d="M626 322H670" class="planned"/>
+  <path d="M1016 322H1062" class="valid"/>
+  <rect x="993" y="285" width="96" height="25" rx="12" fill="#143a3b"/>
+  <text x="1041" y="302" font-size="13" font-weight="700" text-anchor="middle" fill="#89f4df">CH340</text>
+
+  <!-- ESP & downstream -->
+  <path d="M850 486V536H896" class="planned"/>
+  <rect x="901" y="504" width="272" height="122" rx="17" class="box"/>
+  <rect x="923" y="525" width="58" height="58" rx="8" fill="#24375b" stroke="#879bce"/>
+  <rect x="937" y="537" width="30" height="32" rx="4" fill="#18253d" stroke="#a9bfe5"/>
+  <text x="997" y="542" font-size="21" class="title">ESP32-S3</text>
+  <text x="997" y="567" font-size="16" class="body">Gateway Wi-Fi / IoT</text>
+  <text x="923" y="605" font-size="15" fill="#b2c5ff">Código publicado · teste físico pendente</text>
+  <path d="M1175 567H1231" class="planned"/>
+  <rect x="1234" y="504" width="305" height="122" rx="17" class="box"/>
+  <g transform="translate(1257 526)" stroke="#83bbff" stroke-width="3.5" fill="none" stroke-linecap="round">
+    <path d="M6 34H57Q75 32 72 16Q69 -2 50 5Q39 -10 23 1Q16 7 16 15Q0 11 0 27Q1 34 6 34Z"/>
+    <path d="M21 44L48 44"/><path d="M35 38V50"/>
+  </g>
+  <text x="1346" y="547" font-size="20" class="title">Tela e nuvem</text>
+  <text x="1346" y="570" font-size="16" class="body">Monitoramento web</text>
+  <text x="1257" y="605" font-size="15" fill="#b2c5ff">Integração física ainda pendente</text>
+
+  <!-- bottom legend and note -->
+  <path d="M50 658H1550" stroke="#31526b" stroke-width="1.5"/>
+  <path d="M63 679H117" class="valid"/>
+  <text x="131" y="686" font-size="16" class="body">Telemetria validada (3 canais)</text>
+  <path d="M450 679H504" class="planned"/>
+  <text x="518" y="686" font-size="16" class="body">Interface e integrações a validar</text>
+  <text x="1535" y="686" text-anchor="end" font-size="15" class="muted">Figura conceitual · não representa fiação elétrica segura</text>
+</svg>
