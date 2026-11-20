@@ -2,6 +2,8 @@
 
 > **Estado:** guia de integração elétrica e arquitetura proposta, **não** homologação da placa do usuário. Baseado no repositório PRISMA e no manual oficial **DEMOEM User Manual rev. 1.02**. Antes de energizar, conferir a serigrafia, a revisão da PCB, os jumpers instalados, o esquema elétrico e as medições com multímetro. **Nenhum teste físico foi executado no equipamento.**
 
+**Antes de montar uma PCB de aquisição:** consulte a [revisão de seis canais e plano de validação](revisao-aquisicao-seis-canais.md). Ela distingue a pinagem funcional da pinagem física, documenta as limitações do sincronismo e condiciona os valores finais do AFE aos sensores e testes da placa real.
+
 ## 1. Objetivo e limite da placa
 
 O hardware-alvo registrado no PRISMA é o **DEMOEM**, composto pela placa-base DEMOEM e placa-filha DCF51EM256 com microcontrolador **MCF51EM256 ColdFire V1**. Não há nesta versão do repositório arquivos de projeto da PCB, fotos da placa do usuário ou mapeamento físico validado da sua revisão.

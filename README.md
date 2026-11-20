@@ -148,7 +148,7 @@ flowchart LR
 > [!WARNING]
 > Nunca ligue tensão de rede direto ao ADC ou aos pinos do microcontrolador. Medições reais exigem transdutores **isolados** e condicionamento. Os valores exibidos são estimativas, sem calibração certificada.
 
-Guias: [ligações da placa](docs/ligacoes-hardware-demoem.md) · [modo quiosque](docs/quiosque.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
+Guias: [revisão da aquisição de seis canais](docs/revisao-aquisicao-seis-canais.md) · [ligações da placa](docs/ligacoes-hardware-demoem.md) · [modo quiosque](docs/quiosque.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
 
 ## 🗺️ Estado do projeto
 
