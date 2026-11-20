@@ -17,6 +17,7 @@ formas de onda, fasores e harmônicas, ligado por serial à placa **DEMOEM / Col
 **[Começar](#-começar-em-1-minuto)** ·
 **[Recursos](#-recursos)** ·
 **[Hardware](#-hardware-e-bancada)** ·
+**[PCB AFE-LV](#-interface-de-seis-canais-afe-lv-a0)** ·
 **[Estado](#-estado-do-projeto)** ·
 **[Documentação](#-documentação)**
 
@@ -31,7 +32,7 @@ formas de onda, fasores e harmônicas, ligado por serial à placa **DEMOEM / Col
 <br>
 
 > [!NOTE]
-> **Protótipo v0.2.0.** Abre em modo demonstração e funciona sem placa. A DEMOEM já foi gravada e lida em bancada (CodeWarrior + PEmicro, telemetria via CH340). As leituras de ADC ainda são contagens brutas: a calibração metrológica está pendente.
+> **Protótipo v0.2.0.** Abre em modo demonstração e funciona sem placa. A DEMOEM já foi gravada e lida em bancada (CodeWarrior + PEmicro, telemetria via CH340). As leituras de ADC ainda são contagens brutas: a calibração metrológica está pendente. A primeira **interface de seis canais em KiCad (AFE-LV A0)** está disponível na [proposta de alteração #2](https://github.com/frahncky/PRISMA/pull/2), ainda sem liberação para fabricação.
 
 ## ⚡ Começar em 1 minuto
 
@@ -150,6 +151,27 @@ flowchart LR
 
 Guias: [revisão da aquisição de seis canais](docs/revisao-aquisicao-seis-canais.md) · [ligações da placa](docs/ligacoes-hardware-demoem.md) · [modo quiosque](docs/quiosque.md) · [roteiro de bancada](docs/bancada-demoem.md) · [protocolo](docs/protocolo.md) · [bootloader/OTA](docs/bootloader.md) · [firmware ColdFire](firmware/README.md) · [gateway ESP32-S3](gateway/esp32s3/README.md)
 
+## 🧰 Interface de seis canais — AFE-LV A0
+
+A placa **DEMOEM/MCF51EM256** continua responsável pela aquisição. A revisão **AFE-LV A0** é uma **placa de interface de baixa tensão**, projetada para encaminhar seis sinais analógicos **já isolados e condicionados externamente** aos ADCs da DEMOEM. Os arquivos de projeto estão publicados na **[PR #2 — KiCad AFE-LV A0](https://github.com/frahncky/PRISMA/pull/2)** (branch de desenvolvimento; ainda não mesclada à `main`).
+
+| Canal | ADC do ColdFire | Função prevista |
+| --- | --- | --- |
+| `Va`, `Vb`, `Vc` | `AD4/ADC3`, `AD5/ADC1`, `AD6/ADC2` | Três tensões previamente isoladas e condicionadas |
+| `Ia`, `Ib`, `Ic` | `DADP0/ADC3`, `DADP1/ADC1`, `DADP2/ADC2` | Três correntes previamente isoladas e condicionadas; `DADM0/1/2` e `J29` dependem da topologia de entrada |
+
+**Arquivos disponíveis na PR #2:**
+
+- [Esquemático KiCad de seis canais](https://github.com/frahncky/PRISMA/blob/cad/afe-lv-a0-demoem-20261120/cad/afe-lv/prisma_afe_lv.kicad_sch) — 6 conectores de entrada, 6 saídas, resistores série, capacitores e pontos de teste.
+- [Layout preliminar da PCB](https://github.com/frahncky/PRISMA/blob/cad/afe-lv-a0-demoem-20261120/cad/afe-lv/prisma_afe_lv.kicad_pcb) — duas camadas, trilhas iniciais e quatro furos de fixação.
+- [Lista de componentes (BOM)](https://github.com/frahncky/PRISMA/blob/cad/afe-lv-a0-demoem-20261120/cad/afe-lv/BOM.csv) — valores de protótipo, sem fabricantes aprovados.
+- [Guia de pinagem, limites e validação](https://github.com/frahncky/PRISMA/blob/cad/afe-lv-a0-demoem-20261120/cad/afe-lv/README.md) — conexão funcional prevista, verificação de `J29/J38` e ensaios seguros.
+
+> [!CAUTION]
+> **Ainda não é uma placa de medição para conexão à rede.** A AFE-LV A0 **não possui** transdutores de tensão/corrente, proteção e isolamento de rede, referência analógica/polarização, nem filtro anti-alias metrológico dimensionado. Seu RC de 1 kΩ/10 nF é apenas um filtro inicial de EMI. Os conectores da PCB **não reproduzem automaticamente a numeração física do J38**; identificar o lado do microcontrolador por esquema e continuidade com a placa desligada. Não conectar diretamente tensões de rede à PCB ou à DEMOEM e **não mandar fabricar** antes de concluir ERC/DRC e revisão elétrica.
+
+**Para transformar a interface em um medidor real:** confirmar revisão física/pinagem da DEMOEM; selecionar modelos e datasheets dos três TVs e três TCs/sensores; projetar a proteção, a polarização e o filtro anti-alias; medir os seis canais com sinais seguros de baixa tensão; calibrar ganho, offset e fase; e validar erro, sincronismo e segurança. O [plano de aquisição e testes](docs/revisao-aquisicao-seis-canais.md) detalha esses critérios.
+
 ## 🗺️ Estado do projeto
 
 | Entrega | Estado |
@@ -158,6 +180,8 @@ Guias: [revisão da aquisição de seis canais](docs/revisao-aquisicao-seis-cana
 | Análise: frequência, janelas, harmônicas, potência, calibração | ✅ Pronto em software |
 | Histórico CSV / SQLite e relatórios | ✅ Pronto |
 | Aquisição em rajada AD4/AD5/AD6 na DEMOEM (CH340, 115200 8N1) | ✅ Validada em bancada: trifásico a 120°, sem perda de blocos |
+| Aquisição física completa de seis canais Va/Vb/Vc/Ia/Ib/Ic | ⏳ Pendente de validação com sensores reais e calibração de fase |
+| AFE-LV A0 em KiCad (interface SELV de seis canais) | 🧪 Esquemático, layout e BOM na [PR #2](https://github.com/frahncky/PRISMA/pull/2); ERC/DRC e hardware pendentes |
 | Build e gravação ColdFire (CodeWarrior + HI-WAVE) | ✅ Automatizados: `scripts/gravar_demoem.ps1 -Build` |
 | Firmware ColdFire: rajada com timer, trim do oscilador gravado | ✅ Validados · autocalibração do ADC desativada |
 | Telemetria por um único USB (serial virtual PEmicro) | ⏳ Driver atual não cria porta COM |
@@ -258,6 +282,7 @@ Os testes cobrem protocolo, serial fragmentada, cálculos trifásicos, frequênc
 | 🧩 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos |
 | 🧪 | [Bancada DEMOEM](docs/bancada-demoem.md) | Jumpers, testes e critérios de aceitação |
 | 🔌 | [Ligações da placa](docs/ligacoes-hardware-demoem.md) | Alimentação, sensores, UART, touch, bateria e IoT |
+| 🧰 | [AFE-LV A0 — interface KiCad](https://github.com/frahncky/PRISMA/blob/cad/afe-lv-a0-demoem-20261120/cad/afe-lv/README.md) | Esquemático, layout, BOM e validação de seis canais em **PR #2 (rascunho)** |
 | 📡 | [Gateway ESP32-S3](gateway/esp32s3/README.md) | PlatformIO, ponte USB, painel touch, MQTT/TLS e OTA da DEMOEM |
 | 💾 | [Firmware](firmware/README.md) | Encoder C, simulador host e projeto CodeWarrior |
 | 🗺️ | [Roadmap](docs/roadmap.md) | Fases e pendências físicas |
