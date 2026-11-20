@@ -52,6 +52,8 @@ QWidget#touchPanel {{ background: {theme.BG}; }}
 QPushButton#tile {{ background: {theme.SURFACE}; border: 1px solid {theme.BORDER}; border-radius: 18px;
     text-align: left; padding: 0; }}
 QPushButton#tile:pressed {{ background: #14304a; border-color: {theme.ACCENT}; }}
+QPushButton#tile:hover {{ border-color: #41617f; }}
+QPushButton#tile:focus {{ border: 2px solid {theme.ACCENT}; }}
 QLabel#tileCaption {{ color: {theme.MUTED}; font-size: 19px; font-weight: 600; }}
 QLabel#tileValue {{ font-size: 50px; font-weight: 700; }}
 QLabel#tileHint {{ color: {theme.MUTED}; font-size: 16px; }}
@@ -77,6 +79,9 @@ QPushButton#touchButton {{ font-size: 18px; font-weight: 600; min-height: 60px; 
 QPushButton#navTab {{ font-size: 19px; font-weight: 600; min-height: 64px; border-radius: 14px;
     background: {theme.SURFACE}; color: {theme.MUTED}; }}
 QPushButton#navTab:checked {{ background: #12324a; border-color: {theme.ACCENT}; color: #ffffff; }}
+QPushButton#navTab:hover {{ background: {theme.SURFACE_2}; border-color: #41617f; }}
+QPushButton#navTab:focus {{ border-color: {theme.ACCENT}; color: #ffffff; }}
+QPushButton#touchButton:focus {{ border-color: {theme.ACCENT}; }}
 """
 
 

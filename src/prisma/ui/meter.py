@@ -5,7 +5,7 @@ import math
 
 import numpy as np
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QVBoxLayout, QSizePolicy
 
 from prisma.core.measurement import LINE_PAIRS, Measurement, line_voltages, load_nature, totals
 from prisma.ui import theme
@@ -56,8 +56,8 @@ class MeterTable(QFrame):
         title.setObjectName("panelTitle")
         outer.addWidget(title)
         grid = QGridLayout()
-        grid.setHorizontalSpacing(18)
-        grid.setVerticalSpacing(5)
+        grid.setHorizontalSpacing(8)
+        grid.setVerticalSpacing(3)
         grid.setColumnStretch(0, 3)
         for column, name in enumerate(COLUMNS, start=1):
             grid.setColumnStretch(column, 2)
@@ -73,10 +73,17 @@ class MeterTable(QFrame):
         for row, (key, caption) in enumerate(ROWS, start=1):
             label = QLabel(caption)
             label.setObjectName("meterRow")
+            label.setMinimumHeight(24)
+            label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+            label.setProperty("alternateRow", row % 2 == 0)
             grid.addWidget(label, row, 0)
             for column, name in enumerate(COLUMNS, start=1):
                 cell = QLabel("" if key == "ang" and name == "T" else EMPTY)
                 cell.setObjectName("meterTotal" if name == "T" else "meterCell")
+                cell.setMinimumHeight(24)
+                cell.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+                cell.setProperty("alternateRow", row % 2 == 0)
+                cell.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 cell.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 grid.addWidget(cell, row, column)
                 self.cells[(key, name)] = cell

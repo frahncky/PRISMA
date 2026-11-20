@@ -284,6 +284,43 @@ def test_perfil_e_porta_sao_memorizados(window, tmp_path):
     assert (args.port, args.connect, args.screen) == ("COM4", True, 2)
 
 
+def test_porta_aberta_nao_finge_que_esta_recebendo(window):
+    window.device_profile = type(window.device_profile)("teste", baudrate=115200)
+    window.reader = type("Reader", (), {"port": "COM4", "isRunning": lambda self: False})()
+    now = [10.0]
+    window._clock = lambda: now[0]
+
+    window._on_connected("COM4")
+    assert "aberta" in window.hw_status.text()
+    assert "SEM DADOS" in window.mode
+
+    now[0] = 13.1
+    window._update_connection_health()
+    assert "sem telemetria" in window.hw_status.text()
+    assert window.details.text() == "Sem telemetria de COM4. Verifique a conexão e o perfil serial."
+    assert "115200 baud" in window.details.toolTip()
+
+    window._mark_data()
+    assert "recebendo dados" in window.hw_status.text()
+    assert window.mode.startswith("AQUISIÇÃO SERIAL REAL")
+
+
+def test_cards_de_indicadores_nao_se_sobrepoem_em_1366x700(window):
+    from PySide6.QtWidgets import QApplication
+
+    window.resize(1366, 700)
+    window.show()
+    QApplication.processEvents()
+    columns = (
+        (window.frequency_label, window.energy_label, window.unbalance_label),
+        (window.thd_label, window.reactive_energy_label, window.sequence_label),
+    )
+    for column in columns:
+        cards = [label.parentWidget() for label in column]
+        assert cards[0].geometry().bottom() < cards[1].geometry().top()
+        assert cards[1].geometry().bottom() < cards[2].geometry().top()
+
+
 def test_editor_localiza_substitui_e_numera_linhas(window):
     window.editor.setPlainText("int a;\nint b;\nfloat c;\n")
     assert window.editor.gutter_width() > 0

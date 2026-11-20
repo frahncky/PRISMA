@@ -827,6 +827,7 @@ class FeaturesMixin:
             + (f"; correntes (diferenciais) = (contagem − 32768) × {vref} V / 32768." if six else "."))
 
     def _on_hardware_status(self, status) -> None:
+        self._mark_data()
         message = getattr(status, "message", "")
         diagnostics = getattr(status, "diagnostics", {})
         self.hardware_view.setPlainText("TELEMETRIA SERIAL · estados informados pelo firmware\n\n" +
