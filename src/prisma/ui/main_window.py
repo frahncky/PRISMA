@@ -14,7 +14,7 @@ from PySide6.QtGui import QAction, QFont, QIcon, QKeySequence
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QSplitter, QTabWidget,
-    QVBoxLayout, QWidget, QGridLayout,
+    QVBoxLayout, QWidget, QGridLayout, QSizePolicy,
     QTableWidgetItem,
 )
 
@@ -115,6 +115,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.kiosk = False
         self.wiring = "tri"  # ligação do experimento: mono, bi ou tri (ver set_wiring)
         self._last_data_clock: float | None = None  # chegada do último dado da placa (monotônico)
+        self._serial_open_clock: float | None = None
+        self._telemetry_warning_shown = False
         self.recorder: CsvRecorder | SqliteRecorder | None = None
         self.current_file: Path | None = None
         self.demo_index = 0
@@ -213,15 +215,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
         frame = QFrame()
         frame.setObjectName("card")
         layout = QVBoxLayout(frame)
-        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setContentsMargins(14, 6, 14, 6)
         layout.setSpacing(2)
         title = QLabel(caption)
         title.setObjectName("cardCaption")
+        title.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         value = QLabel("—")
         value.setObjectName("cardValue")
+        value.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         value.setStyleSheet(f"color: {color};")
         sub = QLabel(hint)
         sub.setObjectName("cardHint")
+        sub.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         if action is None:
             layout.addWidget(title)
         else:
@@ -230,8 +235,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
             head.addStretch(1)
             head.addWidget(action)
             layout.addLayout(head)
-        layout.addWidget(value)
-        layout.addWidget(sub)
+        layout.addWidget(value, stretch=1)
+        layout.addWidget(sub, alignment=Qt.AlignmentFlag.AlignBottom)
         return frame, value, sub
 
     @staticmethod
@@ -257,6 +262,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         layout.setContentsMargins(10, 8, 10, 8)
         label = QLabel(title)
         label.setObjectName("panelTitle")
+        label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        label.setToolTip(title)
         label.setMinimumHeight(28)
         layout.addWidget(label)
         layout.addWidget(widget, stretch=1)
@@ -272,9 +279,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         # Barra lateral: marca, navegação e estado da conexão.
         rail = QFrame()
         rail.setObjectName("rail")
-        rail.setFixedWidth(210)
+        rail.setFixedWidth(224)
         side = QVBoxLayout(rail)
-        side.setContentsMargins(14, 16, 14, 14)
+        side.setContentsMargins(16, 18, 16, 16)
         side.setSpacing(4)
         brand_row = QHBoxLayout()
         logo = QLabel()
@@ -290,12 +297,25 @@ class MainWindow(FeaturesMixin, QMainWindow):
         names.addWidget(sub)
         brand_row.addLayout(names, stretch=1)
         side.addLayout(brand_row)
-        side.addSpacing(18)
+        side.addSpacing(24)
+        navigation_label = QLabel("ÁREA DE TRABALHO")
+        navigation_label.setObjectName("railSection")
+        side.addWidget(navigation_label)
+        side.addSpacing(6)
         self.nav_buttons: list[tuple[QPushButton, QWidget]] = []
         self._nav_layout = QVBoxLayout()
         self._nav_layout.setSpacing(2)
         side.addLayout(self._nav_layout)
         side.addStretch(1)
+        panel_button = QPushButton("  Painel touch")
+        panel_button.setIcon(theme.icon("scope", theme.ACCENT))
+        panel_button.setToolTip("Abrir painel de medição em tela cheia (F10)")
+        panel_button.clicked.connect(lambda: self.open_touch_panel())
+        side.addWidget(panel_button)
+        side.addSpacing(16)
+        device_label = QLabel("CONEXÃO DO EQUIPAMENTO")
+        device_label.setObjectName("railSection")
+        side.addWidget(device_label)
         self.hw_status = QLabel()
         side.addWidget(self.hw_status)
         self.board_label = QLabel("DEMOEM · MCF51EM256")
@@ -314,13 +334,16 @@ class MainWindow(FeaturesMixin, QMainWindow):
         # Barra superior: título da página, estado e conexão.
         topbar = QFrame()
         topbar.setObjectName("topbar")
-        top = QHBoxLayout(topbar)
-        top.setContentsMargins(20, 12, 16, 12)
+        header = QVBoxLayout(topbar)
+        header.setContentsMargins(20, 10, 16, 10)
+        header.setSpacing(0)
+        top = QHBoxLayout()
+        header.addLayout(top)
+        top.setContentsMargins(0, 0, 0, 0)
         top.setSpacing(8)
         self.page_title = QLabel("Instrumentação")
         self.page_title.setObjectName("pageTitle")
-        top.addWidget(self.page_title)
-        top.addSpacing(10)
+        self.page_title.hide()  # A área atual já está identificada na navegação.
         self.mode_label = QLabel()
         self.mode_label.setObjectName("pill")
         top.addWidget(self.mode_label)
@@ -330,54 +353,69 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.pause_chip.setVisible(False)
         top.addWidget(self.pause_chip)
         top.addStretch(1)
+        self.page_description = QLabel()
+        self.page_description.setObjectName("pageDescription")
+        self.page_description.setWordWrap(True)
+        self.page_description.hide()
         self.btn_pause = QPushButton()
         self.btn_pause.setObjectName("icon")
         self.btn_pause.setCheckable(True)
         self.btn_pause.setIcon(theme.icon("pause"))
+        self.btn_pause.setAccessibleName("Pausar ou retomar gráficos")
         self.btn_pause.setToolTip("Pausar gráficos (Espaço). A aquisição e o registro continuam.")
         self.btn_pause.clicked.connect(lambda _=False: self.toggle_pause())
         self.btn_snapshot = QPushButton()
         self.btn_snapshot.setObjectName("icon")
         self.btn_snapshot.setIcon(theme.icon("camera"))
+        self.btn_snapshot.setAccessibleName("Exportar imagem dos instrumentos")
         self.btn_snapshot.setToolTip("Exportar imagem dos instrumentos (Ctrl+Shift+S)")
         self.btn_snapshot.clicked.connect(lambda _=False: self.export_snapshot())
         self.btn_report = QPushButton()
         self.btn_report.setObjectName("icon")
         self.btn_report.setIcon(theme.icon("report"))
+        self.btn_report.setAccessibleName("Gerar relatório da análise")
         self.btn_report.setToolTip("Gerar relatório HTML com gráficos e tabelas da análise atual")
         self.btn_report.clicked.connect(lambda _=False: self.export_report())
         top.addWidget(self.btn_pause)
         top.addWidget(self.btn_snapshot)
         top.addWidget(self.btn_report)
-        top.addSpacing(10)
+        connection = top
         self.wiring_combo = QComboBox()
         for key, label in WIRING_LABELS.items():
             self.wiring_combo.addItem(label, key)
         self.wiring_combo.setToolTip("Ligação do experimento: fases com sensores (A; A e B; A, B e C)")
         self.wiring_combo.currentIndexChanged.connect(
             lambda _=0: self.set_wiring(self.wiring_combo.currentData()))
-        top.addWidget(self.wiring_combo)
+        self.wiring_combo.setAccessibleName("Ligação do experimento")
+        connection.addWidget(self.wiring_combo)
         self.port_combo = QComboBox()
-        self.port_combo.setMinimumWidth(190)
+        self.port_combo.setMinimumWidth(240)
+        self.port_combo.setMaximumWidth(380)
+        self.port_combo.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.port_combo.setToolTip("Porta serial da placa ou gateway na rede (Wi-Fi)")
         self.port_combo.activated.connect(self._on_port_activated)
-        top.addWidget(self.port_combo)
+        self.port_combo.setAccessibleName("Porta serial ou gateway de rede")
+        connection.addWidget(self.port_combo, stretch=1)
         refresh = QPushButton()
         refresh.setObjectName("icon")
         refresh.setIcon(theme.icon("refresh"))
+        refresh.setAccessibleName("Atualizar dispositivos disponíveis")
         refresh.setToolTip("Atualizar portas COM e gateways salvos")
         refresh.clicked.connect(self.refresh_ports)
-        top.addWidget(refresh)
+        connection.addWidget(refresh)
         self.b_connect = QPushButton("Conectar")
         self.b_connect.setObjectName("primary")
         self.b_connect.setIcon(theme.icon("plug", "#ffffff"))
         self.b_connect.clicked.connect(self.connect_serial)
-        top.addWidget(self.b_connect)
+        connection.addWidget(self.b_connect)
         self.btn_demo = QPushButton("Demo")
+        self.btn_demo.setText("")
+        self.btn_demo.setObjectName("icon")
+        self.btn_demo.setAccessibleName("Iniciar demonstração")
         self.btn_demo.setIcon(theme.icon("wave"))
         self.btn_demo.setToolTip("Sinais trifásicos sintéticos, sem placa")
         self.btn_demo.clicked.connect(self.start_demo)
-        top.addWidget(self.btn_demo)
+        connection.addWidget(self.btn_demo)
         content.addWidget(topbar)
 
         # Ações que pertencem a outras páginas (posicionadas nelas).
@@ -403,17 +441,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
         # Duas faixas (e não três) para caber em telas de 720 px de altura.
         dashboard = QWidget()
         dash = QVBoxLayout(dashboard)
-        dash.setContentsMargins(20, 14, 20, 12)
-        dash.setSpacing(12)
+        dash.setContentsMargins(20, 16, 20, 14)
+        dash.setSpacing(14)
         self.details = NoticeLabel()
         dash.addWidget(self.details)
         metrics = QHBoxLayout()
-        metrics.setSpacing(12)
+        metrics.setSpacing(14)
         self.meter = MeterTable()
         self.metric_labels = self.meter.voltage_labels
         metrics.addWidget(self.meter, stretch=3)
         kpis = QGridLayout()
-        kpis.setSpacing(10)
+        kpis.setHorizontalSpacing(12)
+        kpis.setVerticalSpacing(10)
         card, self.frequency_label, self.frequency_hint = self._card("Frequência", theme.ACCENT, "fundamental")
         kpis.addWidget(card, 0, 0)
         card, self.thd_label, self.thd_hint = self._card("THD tensão · fase A", hint="h2–h15")
@@ -433,7 +472,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
         card, self.sequence_label, self.sequence_hint = self._card("Sequência de fases", hint="")
         kpis.addWidget(card, 2, 1)
         metrics.addLayout(kpis, stretch=2)
-        dash.addLayout(metrics)
+        # A grade tem três linhas. Reservar altura proporcional evita que os
+        # cards sejam comprimidos e pintem sobre a linha seguinte em 1366×768.
+        dash.addLayout(metrics, stretch=3)
 
         self.wave = self._plot("Osciloscópio")
         self.wave.setLabel("left", "Tensão", units="V")
@@ -482,13 +523,17 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.harmonics.showGrid(x=False, y=True, alpha=0.12)
         self.harmonics.setXRange(1.5, 15.5, padding=0)
         charts = QHBoxLayout()
-        charts.setSpacing(12)
+        charts.setSpacing(14)
+        scope_card.setMinimumWidth(0)
+        scope_card.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         charts.addWidget(scope_card, stretch=5)
         card, self.phasor_title = self._titled("FASORES", self.phasor)
+        card.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         charts.addWidget(card, stretch=3)
         card, self.harmonics_title = self._titled("HARMÔNICAS · FASE A (%)", self.harmonics)
+        card.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         charts.addWidget(card, stretch=3)
-        dash.addLayout(charts, stretch=1)
+        dash.addLayout(charts, stretch=2)
         self.tabs.addTab(dashboard, "Instrumentação")
 
         # Página do editor de firmware.
@@ -645,6 +690,8 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.hardware_view.setPlainText("Aguardando telemetria de estados do firmware.")
         self._invalid_sample_logs = 0
         self._last_data_clock = None
+        self._serial_open_clock = None
+        self._telemetry_warning_shown = False
         self._set_mode(f"CONECTANDO A {link_label(port)} — SEM DADOS")
         self.reader = SerialReader(port, self.device_profile.baudrate, parent=self, parser=self.sample_parser)
         self.reader.persistent = self.reader.network or self.kiosk  # o quiosque não desiste da serial
@@ -672,11 +719,22 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self.b_connect.style().polish(self.b_connect)
 
     def _on_connected(self, port: str) -> None:
-        self._set_link_status(f"{link_label(port)} conectada", theme.SUCCESS)
-        self._set_mode(f"SERIAL {link_label(port)} — AGUARDANDO AMOSTRAS")
+        self._serial_open_clock = self._clock()
+        self._set_link_status(f"{link_label(port)} aberta · aguardando telemetria", theme.WARNING)
+        self._set_mode(f"PORTA {link_label(port)} ABERTA — SEM DADOS")
+        self.details.setText(f"Aguardando telemetria de {link_label(port)}…")
+        self.details.setToolTip(
+            f"Porta aberta a {self.device_profile.baudrate} baud; nenhum dado válido recebido ainda."
+        )
 
     def _mark_data(self) -> None:
-        self._last_data_clock = time.monotonic()
+        self._last_data_clock = self._clock()
+        self._telemetry_warning_shown = False
+        if self.reader is not None:
+            label = link_label(getattr(self.reader, "port", "COM"))
+            self._set_link_status(f"{label} · recebendo dados", theme.SUCCESS)
+            if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
+                self._set_mode(f"AQUISIÇÃO SERIAL REAL — {label}", real=True)
 
     def data_age(self) -> float | None:
         """Segundos desde o último dado da placa; None sem placa (demonstração ou nunca chegou)."""
@@ -696,9 +754,21 @@ class MainWindow(FeaturesMixin, QMainWindow):
         self._record_sample(sample if record_t is None else replace(sample, t=record_t))
         if record_t is None:
             self._mark_data()
-        if not self.mode.startswith("AQUISIÇÃO SERIAL REAL"):
-            port = link_label(self.reader.port) if self.reader else "COM"
-            self._set_mode(f"AQUISIÇÃO SERIAL REAL — {port}", real=True)
+
+    def _update_connection_health(self) -> None:
+        """Distingue porta aberta de equipamento realmente transmitindo."""
+        if self.reader is None or self._serial_open_clock is None or self._last_data_clock is not None:
+            return
+        if self._clock() - self._serial_open_clock < 3.0 or self._telemetry_warning_shown:
+            return
+        self._telemetry_warning_shown = True
+        label = link_label(self.reader.port)
+        self._set_link_status(f"{label} aberta · sem telemetria", theme.WARNING)
+        self._set_mode(f"PORTA {label} ABERTA — SEM TELEMETRIA")
+        self.details.setText(f"Sem telemetria de {label}. Verifique a conexão e o perfil serial.")
+        self.details.setToolTip(
+            f"Porta aberta a {self.device_profile.baudrate} baud, mas nenhum dado válido foi recebido."
+        )
 
     def _block_record_times(self, block, arrival: float | None = None) -> list[float]:
         """Tempo real (s desde o início da sessão) de cada amostra de uma rajada.
@@ -837,6 +907,9 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
     def _on_disconnected(self) -> None:
         self.stop_recording()
+        self._serial_open_clock = None
+        self._last_data_clock = None
+        self._telemetry_warning_shown = False
         self._set_link_status("Serial desconectada", theme.SUBTLE)
         self._connect_button(False)
         if not self.mode.startswith("DEMONSTRAÇÃO"):
@@ -870,6 +943,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
     def _tick(self) -> None:
         if self.mode.startswith("DEMONSTRAÇÃO"):
             self._generate_demo_batch()
+        self._update_connection_health()
         self._draw_signals()
         if self.recorder is not None:
             try:
@@ -1122,6 +1196,7 @@ class MainWindow(FeaturesMixin, QMainWindow):
         button.setIcon(theme.icon(icon_name, theme.MUTED))
         button.setIconSize(QSize(18, 18))
         button.setProperty("title", label)
+        button.setProperty("iconName", icon_name)
         button.setObjectName("nav")
         button.setCheckable(True)
         button.clicked.connect(lambda _=False, w=widget: (self.tabs.setCurrentWidget(w), self._sync_nav()))
@@ -1131,10 +1206,18 @@ class MainWindow(FeaturesMixin, QMainWindow):
 
     def _sync_nav(self, index: int | None = None) -> None:
         current = self.tabs.currentWidget()
+        descriptions = {
+            "scope": "Medições por fase, qualidade de energia e sinais em tempo real.",
+            "analysis": "Explore potências, fasores e parâmetros da análise elétrica.",
+            "chip": "Acompanhe o equipamento, a aquisição e os canais de entrada.",
+            "code": "Edite o código-fonte e prepare o firmware do experimento.",
+            "build": "Configure o projeto, compile e acompanhe a saída das ferramentas.",
+        }
         for button, widget in self.nav_buttons:
             button.setChecked(widget is current)
             if widget is current and hasattr(self, "page_title"):
                 self.page_title.setText(button.property("title"))
+                self.page_description.setText(descriptions.get(button.property("iconName"), "Ferramentas de instrumentação e análise do PRISMA."))
 
     def set_wiring(self, wiring: str, save: bool = True) -> None:
         """Ligação do experimento (mono, bi ou tri): fases mostradas, totais e alertas.
