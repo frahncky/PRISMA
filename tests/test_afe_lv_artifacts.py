@@ -53,14 +53,14 @@ def test_six_channels_in_schematic_and_pcb():
     assert sch.count('(lib_id "Device:R")') == 6
     assert sch.count('(lib_id "Device:C")') == 6
     assert sch.count('(lib_id "Connector:TestPoint")') == 6
-    assert len(re.findall(r'\\(footprint "Connector_PinHeader_2.54mm:', pcb)) == 12
-    assert len(re.findall(r'\\(footprint "Resistor_SMD:', pcb)) == 6
-    assert len(re.findall(r'\\(footprint "Capacitor_SMD:', pcb)) == 6
-    assert len(re.findall(r'\\(footprint "TestPoint:', pcb)) == 6
+    assert len(re.findall(r'\(footprint "Connector_PinHeader_2.54mm:', pcb)) == 12
+    assert len(re.findall(r'\(footprint "Resistor_SMD:', pcb)) == 6
+    assert len(re.findall(r'\(footprint "Capacitor_SMD:', pcb)) == 6
+    assert len(re.findall(r'\(footprint "TestPoint:', pcb)) == 6
     for index, name in enumerate(CHANNELS):
         for net in ("IN_" + name, "ADC_" + name):
             assert f'(label "{net}"' in sch
-            assert re.search(r'\\(net \\d+ "{re.escape(net)}"\\)', pcb)
+            assert re.search(r'\(net \d+ "' + net + r'"\)', pcb)
         assert f'(property "Reference" "J{index + 1}"' in sch
         assert f'(property "Reference" "J{index + 7}"' in sch
     assert '(net 1 "GND")' in pcb
