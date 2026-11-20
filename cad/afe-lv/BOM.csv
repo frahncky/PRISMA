@@ -1,0 +1,6 @@
+Ref,Quantidade,Valor,Footprint,Descricao,Status
+R1-R6,6,1k 1% 0805,Resistor_SMD:R_0805_2012Metric,Resistor serie EMI nao protege sobretensao,proposta
+C1-C6,6,10nF C0G NP0 50V 0805,Capacitor_SMD:C_0805_2012Metric,Capacitor EMI referencia GND,proposta
+J1-J12,12,PinHeader 1x02 2.54mm,Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical,Conector provisório 1 sinal 2 GND,proposta
+TP1-TP6,6,Pad 1.5mm,TestPoint:TestPoint_Pad_D1.5mm,Teste do sinal ADC de cada canal,proposta
+H1-H4,4,Furo M3 3.2mm,MountingHole:MountingHole_3.2mm_M3,Fixacao mecanica sem eletrica,proposta

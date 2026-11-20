@@ -258,6 +258,7 @@ Os testes cobrem protocolo, serial fragmentada, cálculos trifásicos, frequênc
 | 🧩 | [Perfis e plugins](docs/plugins.md) | Adaptadores JSON/CSV e API de protocolos |
 | 🧪 | [Bancada DEMOEM](docs/bancada-demoem.md) | Jumpers, testes e critérios de aceitação |
 | 🔌 | [Ligações da placa](docs/ligacoes-hardware-demoem.md) | Alimentação, sensores, UART, touch, bateria e IoT |
+| 🧰 | [PCB AFE-LV A0 — KiCad](cad/afe-lv/README.md) | Esquemático e layout preliminares de seis canais SELV; **não liberados para fabricação** |
 | 📡 | [Gateway ESP32-S3](gateway/esp32s3/README.md) | PlatformIO, ponte USB, painel touch, MQTT/TLS e OTA da DEMOEM |
 | 💾 | [Firmware](firmware/README.md) | Encoder C, simulador host e projeto CodeWarrior |
 | 🗺️ | [Roadmap](docs/roadmap.md) | Fases e pendências físicas |

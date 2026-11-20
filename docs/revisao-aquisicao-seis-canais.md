@@ -117,7 +117,7 @@ O modo contínuo atual usa `PRISMA_CHANNELS=6` por padrão no firmware, enquanto
 - [ ] Separação mecânica de bornes perigosos e baixa tensão, espaçamentos de isolação e gabinete revisados.
 - [ ] Esquemático revisado por responsável técnico, ERC/DRC e plano de testes assinados.
 
-**Próxima entrega após este checklist:** esquemático KiCad, BOM com referências/datasheets e layout AFE v1. Sem as medições acima, um PCB detalhado seria uma hipótese insegura.
+**Protótipo intermediário já disponibilizado:** [AFE-LV A0 (KiCad)](../cad/afe-lv/README.md) contém esquemático e PCB apenas de interface de **seis sinais SELV já isolados e condicionados**, com RC de EMI e sem proteção contra rede. Não é o AFE metrológico. **Próxima entrega após este checklist:** AFE v1 completo com transdutores selecionados e datasheets, BOM de fabricante, anti-alias dimensionado, isolamento/proteção, ERC/DRC e validação física. Sem as medições acima, uma PCB de medição final seria hipótese insegura.
 
 ## Fontes primárias e arquivos relacionados
 
