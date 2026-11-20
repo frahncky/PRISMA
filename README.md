@@ -120,18 +120,31 @@ O app reconecta sozinho se o Wi-Fi cair. Pela rede só passam os comandos de ide
 
 ## 🧩 Como tudo se conecta
 
+<p align="center">
+  <a href="docs/images/prisma-arquitetura.svg">
+    <img src="docs/images/prisma-arquitetura.svg" alt="Infográfico do PRISMA: sensores isolados, interface de seis canais AFE-LV A0, placa DEMOEM MCF51EM256, aplicativo de PC e futura integração ESP32-S3, tela e nuvem" width="100%">
+  </a>
+  <br>
+  <sub><b>Arquitetura conceitual.</b> A comunicação DEMOEM → PC por CH340 foi validada com três canais; o AFE-LV A0, a aquisição real de seis canais e a integração física com ESP32-S3 ainda requerem testes. Clique para ampliar.</sub>
+</p>
+
+<details>
+<summary>Ver também o diagrama lógico em Mermaid</summary>
+
 ```mermaid
 flowchart LR
     S["Sensores isolados<br/>tensão e corrente"] --> A["Condicionamento<br/>e filtros"]
     A --> B["DEMOEM<br/>ColdFire MCF51EM256"]
-    B -->|"SCI3 · rajadas JSON · 115200 8N1"| P["🖥️ PRISMA desktop"]
+    B -->|"SCI3 · CH340 · 115200 8N1"| P["🖥️ PRISMA desktop"]
     B -.->|"UART"| G["Gateway ESP32-S3<br/>(protótipo)"]
     G -.->|"USB CDC"| P
     G -.->|"Wi-Fi · MQTT/TLS"| I["☁️ IoT"]
     G -.-> H["📱 Painel touch web"]
 ```
 
-<sub>Linhas contínuas: caminho validado em bancada. Tracejadas: código publicado, ainda sem teste físico.</sub>
+<sub>Linhas contínuas: telemetria de três canais validada em bancada. Tracejadas: integração física pendente.</sub>
+
+</details>
 
 ## 🔌 Hardware e bancada
 
